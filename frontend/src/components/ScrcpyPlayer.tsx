@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import React from 'react';
 import jMuxer from 'jmuxer';
 import { sendTap, sendSwipe, getScreenshot } from '../api';
-
+const MIN_SWIPE_DISTANCE = 3; // Minimum distance in pixels to qualify as a swipe
 interface ScrcpyPlayerProps {
   className?: string;
   onFallback?: () => void; // Callback when fallback to screenshot is needed
@@ -203,7 +203,7 @@ export function ScrcpyPlayer({
     }
 
     // Check if it's a valid swipe (minimum distance and reasonable duration)
-    if (distance < 30 || deltaTime < 100 || deltaTime > 2000) {
+    if (distance < MIN_SWIPE_DISTANCE || deltaTime < 100 || deltaTime > 2000) {
       console.log(
         '[ScrcpyPlayer] Invalid swipe: distance=',
         distance,
