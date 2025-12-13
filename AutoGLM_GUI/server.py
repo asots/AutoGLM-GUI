@@ -121,6 +121,57 @@ class TapResponse(BaseModel):
     error: str | None = None
 
 
+class SwipeRequest(BaseModel):
+    start_x: int
+    start_y: int
+    end_x: int
+    end_y: int
+    duration_ms: int | None = None
+    device_id: str | None = None
+    delay: float = 0.0
+
+
+class SwipeResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
+class TouchDownRequest(BaseModel):
+    x: int
+    y: int
+    device_id: str | None = None
+    delay: float = 0.0
+
+
+class TouchDownResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
+class TouchMoveRequest(BaseModel):
+    x: int
+    y: int
+    device_id: str | None = None
+    delay: float = 0.0
+
+
+class TouchMoveResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
+class TouchUpRequest(BaseModel):
+    x: int
+    y: int
+    device_id: str | None = None
+    delay: float = 0.0
+
+
+class TouchUpResponse(BaseModel):
+    success: bool
+    error: str | None = None
+
+
 # API 端点
 @app.post("/api/init")
 def init_agent(request: InitRequest) -> dict:
@@ -364,6 +415,81 @@ def control_tap(request: TapRequest) -> TapResponse:
         return TapResponse(success=True)
     except Exception as e:
         return TapResponse(success=False, error=str(e))
+
+
+@app.post("/api/control/swipe", response_model=SwipeResponse)
+def control_swipe(request: SwipeRequest) -> SwipeResponse:
+    """Execute swipe from start to end coordinates."""
+    try:
+        from phone_agent.adb import swipe
+
+        swipe(
+            start_x=request.start_x,
+            start_y=request.start_y,
+            end_x=request.end_x,
+            end_y=request.end_y,
+            duration_ms=request.duration_ms,
+            device_id=request.device_id,
+            delay=request.delay
+        )
+
+        return SwipeResponse(success=True)
+    except Exception as e:
+        return SwipeResponse(success=False, error=str(e))
+
+
+@app.post("/api/control/touch/down", response_model=TouchDownResponse)
+def control_touch_down(request: TouchDownRequest) -> TouchDownResponse:
+    """Send touch DOWN event at specified device coordinates."""
+    try:
+        from AutoGLM_GUI.adb_plus import touch_down
+
+        touch_down(
+            x=request.x,
+            y=request.y,
+            device_id=request.device_id,
+            delay=request.delay
+        )
+
+        return TouchDownResponse(success=True)
+    except Exception as e:
+        return TouchDownResponse(success=False, error=str(e))
+
+
+@app.post("/api/control/touch/move", response_model=TouchMoveResponse)
+def control_touch_move(request: TouchMoveRequest) -> TouchMoveResponse:
+    """Send touch MOVE event at specified device coordinates."""
+    try:
+        from AutoGLM_GUI.adb_plus import touch_move
+
+        touch_move(
+            x=request.x,
+            y=request.y,
+            device_id=request.device_id,
+            delay=request.delay
+        )
+
+        return TouchMoveResponse(success=True)
+    except Exception as e:
+        return TouchMoveResponse(success=False, error=str(e))
+
+
+@app.post("/api/control/touch/up", response_model=TouchUpResponse)
+def control_touch_up(request: TouchUpRequest) -> TouchUpResponse:
+    """Send touch UP event at specified device coordinates."""
+    try:
+        from AutoGLM_GUI.adb_plus import touch_up
+
+        touch_up(
+            x=request.x,
+            y=request.y,
+            device_id=request.device_id,
+            delay=request.delay
+        )
+
+        return TouchUpResponse(success=True)
+    except Exception as e:
+        return TouchUpResponse(success=False, error=str(e))
 
 
 @app.websocket("/api/video/stream")

@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import jMuxer from 'jmuxer';
-import { sendTap, getScreenshot } from '../api';
-
+import {
+  sendTap,
+  sendSwipe,
+  getScreenshot,
+  sendTouchDown,
+  sendTouchMove,
+  sendTouchUp,
+} from '../api';
+const MIN_SWIPE_DISTANCE = 3; // Minimum distance in pixels to qualify as a swipe
+const WHEEL_DELAY_MS = 400; // Debounce delay for wheel events
+const MOTION_THROTTLE_MS = 50; // Throttle for motion events (50ms = 20 events/sec)
 interface ScrcpyPlayerProps {
   className?: string;
   onFallback?: () => void; // Callback when fallback to screenshot is needed
@@ -9,6 +19,8 @@ interface ScrcpyPlayerProps {
   enableControl?: boolean; // Enable click control
   onTapSuccess?: () => void; // Callback on successful tap
   onTapError?: (error: string) => void; // Callback on tap error
+  onSwipeSuccess?: () => void; // Callback on successful swipe
+  onSwipeError?: (error: string) => void; // Callback on swipe error
 }
 
 export function ScrcpyPlayer({
@@ -18,6 +30,8 @@ export function ScrcpyPlayer({
   enableControl = false,
   onTapSuccess,
   onTapError,
+  onSwipeSuccess,
+  onSwipeError,
 }: ScrcpyPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const jmuxerRef = useRef<any>(null);
@@ -37,6 +51,33 @@ export function ScrcpyPlayer({
   }
   const [ripples, setRipples] = useState<RippleEffect[]>([]);
 
+  // Swipe detection state
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef<{ x: number; y: number; time: number } | null>(
+    null
+  );
+  const [swipeLine, setSwipeLine] = useState<{
+    id: number;
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null>(null);
+
+  // Wheel debounce state
+  const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const accumulatedScrollRef = useRef<{
+    deltaY: number;
+    lastTime: number;
+    mouseX: number;
+    mouseY: number;
+  } | null>(null);
+
+  // Motion event throttling state
+  const lastMoveTimeRef = useRef<number>(0);
+  const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
+  const moveThrottleTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Device actual resolution (not video stream resolution)
   const [deviceResolution, setDeviceResolution] = useState<{
     width: number;
@@ -45,11 +86,11 @@ export function ScrcpyPlayer({
 
   // Latency monitoring
   const frameCountRef = useRef(0);
-  const lastStatsTimeRef = useRef(Date.now());
+  const lastStatsTimeRef = useRef<number>(0);
 
   // Error recovery (debounce reconnects)
-  const lastErrorTimeRef = useRef(0);
-  const lastConnectTimeRef = useRef(0);
+  const lastErrorTimeRef = useRef<number>(0);
+  const lastConnectTimeRef = useRef<number>(0);
 
   // Use ref to store latest callback to avoid useEffect re-running
   const onFallbackRef = useRef(onFallback);
@@ -131,6 +172,428 @@ export function ScrcpyPlayer({
   };
 
   /**
+   * Handle mouse down event for drag start
+   */
+  const handleMouseDown = async (event: React.MouseEvent<HTMLVideoElement>) => {
+    if (!enableControl || !videoRef.current || status !== 'connected') return;
+
+    isDraggingRef.current = true;
+    dragStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      time: Date.now(),
+    };
+
+    // Convert to device coordinates and send DOWN event
+    const rect = videoRef.current.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
+
+    const deviceCoords = getDeviceCoordinates(clickX, clickY, videoRef.current);
+    if (!deviceCoords || !deviceResolution) return;
+
+    // Scale to actual device resolution
+    const videoWidth = videoRef.current.videoWidth;
+    const videoHeight = videoRef.current.videoHeight;
+    const scaleX = deviceResolution.width / videoWidth;
+    const scaleY = deviceResolution.height / videoHeight;
+
+    const actualDeviceX = Math.round(deviceCoords.x * scaleX);
+    const actualDeviceY = Math.round(deviceCoords.y * scaleY);
+
+    try {
+      await sendTouchDown(actualDeviceX, actualDeviceY);
+      console.log(`[Touch] DOWN: (${actualDeviceX}, ${actualDeviceY})`);
+    } catch (error) {
+      console.error('[Touch] DOWN failed:', error);
+    }
+  };
+
+  /**
+   * Handle mouse move event with throttling for real-time dragging
+   */
+  const handleMouseMove = (event: React.MouseEvent<HTMLVideoElement>) => {
+    if (!isDraggingRef.current || !dragStartRef.current) return;
+
+    // Update swipe line visualization (no throttle for visual feedback)
+    setSwipeLine({
+      id: Date.now(),
+      startX: dragStartRef.current.x,
+      startY: dragStartRef.current.y,
+      endX: event.clientX,
+      endY: event.clientY,
+    });
+
+    // Throttled MOVE event sending
+    const rect = videoRef.current?.getBoundingClientRect();
+    if (!rect || !videoRef.current || !deviceResolution) return;
+
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
+
+    const deviceCoords = getDeviceCoordinates(clickX, clickY, videoRef.current);
+    if (!deviceCoords) return;
+
+    // Scale to actual device resolution
+    const videoWidth = videoRef.current.videoWidth;
+    const videoHeight = videoRef.current.videoHeight;
+    const scaleX = deviceResolution.width / videoWidth;
+    const scaleY = deviceResolution.height / videoHeight;
+
+    const actualDeviceX = Math.round(deviceCoords.x * scaleX);
+    const actualDeviceY = Math.round(deviceCoords.y * scaleY);
+
+    // Check if enough time has passed since last MOVE event
+    const now = Date.now();
+    if (now - lastMoveTimeRef.current >= MOTION_THROTTLE_MS) {
+      // Send immediately
+      lastMoveTimeRef.current = now;
+      sendTouchMove(actualDeviceX, actualDeviceY).catch(error => {
+        console.error('[Touch] MOVE failed:', error);
+      });
+    } else {
+      // Store pending move and schedule throttled send
+      pendingMoveRef.current = { x: actualDeviceX, y: actualDeviceY };
+
+      if (moveThrottleTimerRef.current) {
+        clearTimeout(moveThrottleTimerRef.current);
+      }
+
+      moveThrottleTimerRef.current = setTimeout(
+        () => {
+          if (pendingMoveRef.current) {
+            const { x, y } = pendingMoveRef.current;
+            lastMoveTimeRef.current = Date.now();
+            sendTouchMove(x, y).catch(error => {
+              console.error('[Touch] MOVE (throttled) failed:', error);
+            });
+            pendingMoveRef.current = null;
+          }
+        },
+        MOTION_THROTTLE_MS - (now - lastMoveTimeRef.current)
+      );
+    }
+  };
+
+  /**
+   * Handle mouse up event for drag end
+   */
+  const handleMouseUp = async (event: React.MouseEvent<HTMLVideoElement>) => {
+    if (!isDraggingRef.current || !dragStartRef.current) return;
+
+    const deltaX = event.clientX - dragStartRef.current.x;
+    const deltaY = event.clientY - dragStartRef.current.y;
+    const deltaTime = Date.now() - dragStartRef.current.time;
+
+    // Clear swipe line
+    setSwipeLine(null);
+    isDraggingRef.current = false;
+
+    // Clear any pending throttled MOVE events
+    if (moveThrottleTimerRef.current) {
+      clearTimeout(moveThrottleTimerRef.current);
+      moveThrottleTimerRef.current = null;
+    }
+    pendingMoveRef.current = null;
+
+    // Check if it's a tap (short movement, short duration)
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    if (distance < 10 && deltaTime < 200) {
+      // It's a tap - use existing tap logic
+      handleVideoClick(event);
+      dragStartRef.current = null;
+      return;
+    }
+
+    // Send UP event at final position
+    const rect = videoRef.current?.getBoundingClientRect();
+    if (!rect || !videoRef.current || !deviceResolution) {
+      dragStartRef.current = null;
+      return;
+    }
+
+    const clickX = event.clientX - rect.left;
+    const clickY = event.clientY - rect.top;
+
+    const deviceCoords = getDeviceCoordinates(clickX, clickY, videoRef.current);
+    if (!deviceCoords) {
+      dragStartRef.current = null;
+      return;
+    }
+
+    // Scale to actual device resolution
+    const videoWidth = videoRef.current.videoWidth;
+    const videoHeight = videoRef.current.videoHeight;
+    const scaleX = deviceResolution.width / videoWidth;
+    const scaleY = deviceResolution.height / videoHeight;
+
+    const actualDeviceX = Math.round(deviceCoords.x * scaleX);
+    const actualDeviceY = Math.round(deviceCoords.y * scaleY);
+
+    try {
+      await sendTouchUp(actualDeviceX, actualDeviceY);
+      console.log(`[Touch] UP: (${actualDeviceX}, ${actualDeviceY})`);
+      onTapSuccess?.();
+    } catch (error) {
+      console.error('[Touch] UP failed:', error);
+      onTapError?.(String(error));
+    }
+
+    dragStartRef.current = null;
+  };
+
+  /**
+   * Handle wheel event for vertical scrolling with debouncing
+   */
+  const handleWheel = async (event: React.WheelEvent<HTMLVideoElement>) => {
+    if (!enableControl || !videoRef.current || status !== 'connected') return;
+
+    // Prevent default scroll behavior
+    // event.preventDefault();
+
+    const now = Date.now();
+    const currentDelta = event.deltaY;
+
+    // Initialize or accumulate scroll data
+    if (!accumulatedScrollRef.current) {
+      accumulatedScrollRef.current = {
+        deltaY: 0,
+        lastTime: now,
+        mouseX: event.clientX,
+        mouseY: event.clientY,
+      };
+    }
+
+    // Accumulate scroll delta and track average mouse position
+    accumulatedScrollRef.current.deltaY += currentDelta;
+    accumulatedScrollRef.current.lastTime = now;
+    // Update mouse position as weighted average to smooth movement
+    const currentWeight = 0.3; // Weight for new mouse position
+    accumulatedScrollRef.current.mouseX = Math.round(
+      accumulatedScrollRef.current.mouseX * (1 - currentWeight) +
+        event.clientX * currentWeight
+    );
+    accumulatedScrollRef.current.mouseY = Math.round(
+      accumulatedScrollRef.current.mouseY * (1 - currentWeight) +
+        event.clientY * currentWeight
+    );
+
+    // Clear existing timeout
+    if (wheelTimeoutRef.current) {
+      clearTimeout(wheelTimeoutRef.current);
+    }
+
+    // Set new timeout to execute scroll after 150ms of inactivity
+    wheelTimeoutRef.current = setTimeout(async () => {
+      if (!accumulatedScrollRef.current || !videoRef.current) return;
+
+      const totalDelta = accumulatedScrollRef.current;
+      accumulatedScrollRef.current = null; // Reset accumulation
+
+      // Validate totalDelta has required properties
+      if (totalDelta.mouseX === undefined || totalDelta.mouseY === undefined)
+        return;
+
+      // Get accumulated mouse position
+      const rect = videoRef.current.getBoundingClientRect();
+      const mouseX = totalDelta.mouseX;
+      const mouseY = totalDelta.mouseY;
+
+      // Calculate scroll distance from accumulated delta
+      const scrollDistance = Math.abs(totalDelta.deltaY);
+      const swipeDuration = Math.min(Math.max(300, scrollDistance), 800); // Duration based on distance
+
+      // Convert mouse position to device coordinates
+      const mouseDeviceCoords = getDeviceCoordinates(
+        mouseX - rect.left,
+        mouseY - rect.top,
+        videoRef.current
+      );
+
+      if (!mouseDeviceCoords || !deviceResolution) {
+        console.warn(
+          '[ScrcpyPlayer] Cannot execute scroll: coordinate transformation failed'
+        );
+        return;
+      }
+
+      // Scale from video stream resolution to device actual resolution
+      const videoWidth = videoRef.current.videoWidth;
+      const videoHeight = videoRef.current.videoHeight;
+      const scaleX = deviceResolution.width / videoWidth;
+      const scaleY = deviceResolution.height / videoHeight;
+
+      const actualCenterX = Math.round(mouseDeviceCoords.x * scaleX);
+      const actualCenterY = Math.round(mouseDeviceCoords.y * scaleY);
+
+      // Calculate swipe start and end points (inverted: scroll down = swipe up)
+      let startY, endY;
+      if (totalDelta.deltaY > 0) {
+        // Scroll down - swipe up (from mouse position upward)
+        startY = actualCenterY;
+        endY = actualCenterY - scrollDistance;
+      } else {
+        // Scroll up - swipe down (from mouse position downward)
+        startY = actualCenterY;
+        endY = actualCenterY + scrollDistance;
+      }
+
+      // Show scroll indicator aligned with actual swipe trajectory
+      // Calculate visual distance using device height to display height ratio (1:1 mapping)
+      const deviceScrollDistance = Math.abs(endY - startY);
+      const visualDistance = Math.max(
+        (deviceScrollDistance / deviceResolution.height) * rect.height, // Direct 1:1 mapping
+        20
+      );
+
+      // Animation duration proportional to actual swipe duration
+      const animationDuration = Math.min(
+        Math.max(swipeDuration * 0.8, 200),
+        800
+      );
+
+      // Create moving ball indicator from mouse position
+      const scrollIndicator = document.createElement('div');
+      scrollIndicator.style.cssText = `
+        position: fixed;
+        left: ${mouseX}px;
+        top: ${mouseY}px;
+        width: 20px;
+        height: 20px;
+        pointer-events: none;
+        z-index: 50;
+        transform: translateX(-50%) translateY(-50%);
+        background: radial-gradient(circle,
+          rgba(59, 130, 246, 0.8) 0%,
+          rgba(59, 130, 246, 0.4) 30%,
+          rgba(59, 130, 246, 0.2) 60%,
+          rgba(59, 130, 246, 0) 100%);
+        border-radius: 50%;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+      `;
+
+      // Create moving ball animation from mouse position
+      const startTime = Date.now();
+      const moveInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const progressRatio = Math.min(elapsed / animationDuration, 1);
+
+        const ballTop =
+          totalDelta.deltaY > 0
+            ? mouseY - visualDistance * progressRatio
+            : mouseY + visualDistance * progressRatio;
+
+        scrollIndicator.style.top = ballTop + 'px';
+
+        if (progressRatio >= 1) {
+          clearInterval(moveInterval);
+        }
+      }, 16); // 60fps
+
+      document.body.appendChild(scrollIndicator);
+
+      // Remove scroll indicator after animation
+      setTimeout(() => {
+        if (scrollIndicator.parentNode) {
+          scrollIndicator.parentNode.removeChild(scrollIndicator);
+        }
+        clearInterval(moveInterval);
+      }, animationDuration);
+
+      try {
+        const result = await sendSwipe(
+          actualCenterX,
+          startY,
+          actualCenterX,
+          endY,
+          swipeDuration
+        );
+
+        if (result.success) {
+          onSwipeSuccess?.();
+        } else {
+          onSwipeError?.(result.error || 'Scroll failed');
+        }
+      } catch (error) {
+        onSwipeError?.(String(error));
+      }
+    }, WHEEL_DELAY_MS);
+
+    return;
+  };
+
+  /**
+   * Execute swipe gesture
+   */
+  const executeSwipe = async (
+    start: { x: number; y: number; time: number },
+    end: { x: number; y: number; time: number }
+  ) => {
+    if (!videoRef.current || !deviceResolution) {
+      console.warn(
+        '[ScrcpyPlayer] Cannot execute swipe: video or device resolution not available'
+      );
+      return;
+    }
+
+    const rect = videoRef.current.getBoundingClientRect();
+
+    // Convert start and end coordinates to device coordinates
+    const startDeviceCoords = getDeviceCoordinates(
+      start.x - rect.left,
+      start.y - rect.top,
+      videoRef.current
+    );
+    const endDeviceCoords = getDeviceCoordinates(
+      end.x - rect.left,
+      end.y - rect.top,
+      videoRef.current
+    );
+
+    if (!startDeviceCoords || !endDeviceCoords) {
+      console.warn(
+        '[ScrcpyPlayer] Cannot execute swipe: coordinate transformation failed'
+      );
+      return;
+    }
+
+    // Scale from video stream resolution to device actual resolution
+    const videoWidth = videoRef.current.videoWidth;
+    const videoHeight = videoRef.current.videoHeight;
+    const scaleX = deviceResolution.width / videoWidth;
+    const scaleY = deviceResolution.height / videoHeight;
+
+    const actualStartX = Math.round(startDeviceCoords.x * scaleX);
+    const actualStartY = Math.round(startDeviceCoords.y * scaleY);
+    const actualEndX = Math.round(endDeviceCoords.x * scaleX);
+    const actualEndY = Math.round(endDeviceCoords.y * scaleY);
+
+    // Calculate duration based on distance and time
+    const distance = Math.sqrt(
+      Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2)
+    );
+    const durationMs = Math.round(Math.min(Math.max(300, distance * 2), 1000));
+
+    try {
+      const result = await sendSwipe(
+        actualStartX,
+        actualStartY,
+        actualEndX,
+        actualEndY,
+        durationMs
+      );
+
+      if (result.success) {
+        onSwipeSuccess?.();
+      } else {
+        onSwipeError?.(result.error || 'Swipe failed');
+      }
+    } catch (error) {
+      onSwipeError?.(String(error));
+    }
+  };
+
+  /**
    * Handle video click event
    */
   const handleVideoClick = async (
@@ -141,7 +604,6 @@ export function ScrcpyPlayer({
 
     // Guard: Video not ready
     if (!videoRef.current || status !== 'connected') {
-      console.warn('[ScrcpyPlayer] Video not ready for control');
       return;
     }
 
@@ -150,13 +612,11 @@ export function ScrcpyPlayer({
       videoRef.current.videoWidth === 0 ||
       videoRef.current.videoHeight === 0
     ) {
-      console.warn('[ScrcpyPlayer] Video dimensions not available');
       return;
     }
 
     // Guard: Device resolution not available
     if (!deviceResolution) {
-      console.warn('[ScrcpyPlayer] Device resolution not available yet');
       return;
     }
 
@@ -180,13 +640,6 @@ export function ScrcpyPlayer({
     const actualDeviceX = Math.round(deviceCoords.x * scaleX);
     const actualDeviceY = Math.round(deviceCoords.y * scaleY);
 
-    console.log(`[ScrcpyPlayer] Coordinate scaling:
-      Video stream: ${videoWidth}x${videoHeight}
-      Device actual: ${deviceResolution.width}x${deviceResolution.height}
-      Scale: ${scaleX.toFixed(3)}x${scaleY.toFixed(3)}
-      Video coords: (${deviceCoords.x}, ${deviceCoords.y})
-      Device coords: (${actualDeviceX}, ${actualDeviceY})`);
-
     // Add ripple effect (use viewport coordinates for fixed positioning)
     const rippleId = Date.now();
     setRipples(prev => [
@@ -203,14 +656,11 @@ export function ScrcpyPlayer({
     try {
       const result = await sendTap(actualDeviceX, actualDeviceY);
       if (result.success) {
-        console.log('[ScrcpyPlayer] Tap successful');
         onTapSuccess?.();
       } else {
-        console.error('[ScrcpyPlayer] Tap failed:', result.error);
         onTapError?.(result.error || 'Unknown error');
       }
     } catch (error) {
-      console.error('[ScrcpyPlayer] Tap request failed:', error);
       onTapError?.(String(error));
     }
   };
@@ -494,6 +944,12 @@ export function ScrcpyPlayer({
         wsRef.current = null;
       }
 
+      // Cleanup motion throttle timer
+      if (moveThrottleTimerRef.current) {
+        clearTimeout(moveThrottleTimerRef.current);
+        moveThrottleTimerRef.current = null;
+      }
+
       if (jmuxerRef.current) {
         try {
           jmuxerRef.current.destroy();
@@ -515,12 +971,77 @@ export function ScrcpyPlayer({
         autoPlay
         muted
         playsInline
-        onClick={handleVideoClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={async () => {
+          // Cancel drag if mouse leaves video area
+          if (isDraggingRef.current && videoRef.current && deviceResolution) {
+            // Send UP event to cancel incomplete gesture
+            if (dragStartRef.current) {
+              const rect = videoRef.current.getBoundingClientRect();
+              // Use dragStart as fallback position
+              const deviceCoords = getDeviceCoordinates(
+                dragStartRef.current.x - rect.left,
+                dragStartRef.current.y - rect.top,
+                videoRef.current
+              );
+
+              if (deviceCoords) {
+                const scaleX =
+                  deviceResolution.width / videoRef.current.videoWidth;
+                const scaleY =
+                  deviceResolution.height / videoRef.current.videoHeight;
+                const x = Math.round(deviceCoords.x * scaleX);
+                const y = Math.round(deviceCoords.y * scaleY);
+
+                try {
+                  await sendTouchUp(x, y);
+                  console.log('[Touch] UP (mouse leave)');
+                } catch (error) {
+                  console.error('[Touch] UP (mouse leave) failed:', error);
+                }
+              }
+            }
+
+            isDraggingRef.current = false;
+            setSwipeLine(null);
+            dragStartRef.current = null;
+          }
+        }}
+        onWheel={handleWheel}
         className={`max-w-full max-h-full object-contain ${
           enableControl ? 'cursor-pointer' : ''
         }`}
         style={{ backgroundColor: '#000' }}
       />
+
+      {/* Swipe line visualization */}
+      {enableControl && swipeLine && (
+        <svg className="fixed inset-0 pointer-events-none z-40">
+          <line
+            x1={swipeLine.startX}
+            y1={swipeLine.startY}
+            x2={swipeLine.endX}
+            y2={swipeLine.endY}
+            stroke="rgba(59, 130, 246, 0.8)"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <circle
+            cx={swipeLine.startX}
+            cy={swipeLine.startY}
+            r="6"
+            fill="rgba(59, 130, 246, 0.8)"
+          />
+          <circle
+            cx={swipeLine.endX}
+            cy={swipeLine.endY}
+            r="6"
+            fill="rgba(239, 68, 68, 0.8)"
+          />
+        </svg>
+      )}
 
       {/* Ripple effects overlay */}
       {enableControl &&

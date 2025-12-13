@@ -81,6 +81,57 @@ export interface TapResponse {
   error?: string;
 }
 
+export interface SwipeRequest {
+  start_x: number;
+  start_y: number;
+  end_x: number;
+  end_y: number;
+  duration_ms?: number;
+  device_id?: string | null;
+  delay?: number;
+}
+
+export interface SwipeResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface TouchDownRequest {
+  x: number;
+  y: number;
+  device_id?: string | null;
+  delay?: number;
+}
+
+export interface TouchDownResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface TouchMoveRequest {
+  x: number;
+  y: number;
+  device_id?: string | null;
+  delay?: number;
+}
+
+export interface TouchMoveResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface TouchUpRequest {
+  x: number;
+  y: number;
+  device_id?: string | null;
+  delay?: number;
+}
+
+export interface TouchUpResponse {
+  success: boolean;
+  error?: string;
+}
+
 export async function initAgent(
   config?: InitRequest
 ): Promise<{ success: boolean; message: string }> {
@@ -197,6 +248,82 @@ export async function sendTap(
   const res = await axios.post<TapResponse>('/api/control/tap', {
     x,
     y,
+    device_id: deviceId ?? null,
+    delay,
+  });
+  return res.data;
+}
+
+export async function sendSwipe(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  durationMs?: number,
+  deviceId?: string | null,
+  delay: number = 0
+): Promise<SwipeResponse> {
+  const swipeData = {
+    start_x: Math.round(startX),
+    start_y: Math.round(startY),
+    end_x: Math.round(endX),
+    end_y: Math.round(endY),
+    duration_ms: Math.round(durationMs || 300),
+    device_id: deviceId ?? null,
+    delay: Math.round(delay * 1000) / 1000,
+  };
+
+  try {
+    const res = await axios.post<SwipeResponse>(
+      '/api/control/swipe',
+      swipeData
+    );
+    return res.data;
+  } catch (error) {
+    console.error('[API] Swipe request failed:', error);
+    throw error;
+  }
+}
+
+export async function sendTouchDown(
+  x: number,
+  y: number,
+  deviceId?: string | null,
+  delay: number = 0
+): Promise<TouchDownResponse> {
+  const res = await axios.post<TouchDownResponse>('/api/control/touch/down', {
+    x: Math.round(x),
+    y: Math.round(y),
+    device_id: deviceId ?? null,
+    delay,
+  });
+  return res.data;
+}
+
+export async function sendTouchMove(
+  x: number,
+  y: number,
+  deviceId?: string | null,
+  delay: number = 0
+): Promise<TouchMoveResponse> {
+  const res = await axios.post<TouchMoveResponse>('/api/control/touch/move', {
+    x: Math.round(x),
+    y: Math.round(y),
+    device_id: deviceId ?? null,
+    delay,
+  });
+  return res.data;
+}
+
+export async function sendTouchUp(
+  x: number,
+  y: number,
+  deviceId?: string | null,
+  delay: number = 0
+): Promise<TouchUpResponse> {
+  const res = await axios.post<TouchUpResponse>('/api/control/touch/up', {
+    x: Math.round(x),
+    y: Math.round(y),
     device_id: deviceId ?? null,
     delay,
   });
