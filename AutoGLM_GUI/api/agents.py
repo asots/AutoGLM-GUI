@@ -281,14 +281,26 @@ def get_config_endpoint() -> ConfigResponse:
 
     # 检查是否有 CLI 参数（环境变量值不同于默认值且文件配置中没有对应值）
     has_cli_config = (
-        (env_config["base_url"] and env_config["base_url"] != "") and
-        (not file_config or file_config.get("base_url") != env_config["base_url"])
-    ) or (
-        (env_config["model_name"] and env_config["model_name"] != "autoglm-phone-9b") and
-        (not file_config or file_config.get("model_name") != env_config["model_name"])
-    ) or (
-        (env_config["api_key"] and env_config["api_key"] != "EMPTY") and
-        (not file_config or file_config.get("api_key") != env_config["api_key"])
+        (
+            (env_config["base_url"] and env_config["base_url"] != "")
+            and (
+                not file_config or file_config.get("base_url") != env_config["base_url"]
+            )
+        )
+        or (
+            (
+                env_config["model_name"]
+                and env_config["model_name"] != "autoglm-phone-9b"
+            )
+            and (
+                not file_config
+                or file_config.get("model_name") != env_config["model_name"]
+            )
+        )
+        or (
+            (env_config["api_key"] and env_config["api_key"] != "EMPTY")
+            and (not file_config or file_config.get("api_key") != env_config["api_key"])
+        )
     )
 
     if has_cli_config:
