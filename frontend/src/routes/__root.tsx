@@ -39,6 +39,7 @@ function Footer() {
             return;
           }
         } catch (e) {
+          console.log(e);
           // Invalid cache, continue to fetch
         }
       }
