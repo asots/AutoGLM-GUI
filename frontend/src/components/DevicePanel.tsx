@@ -27,6 +27,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useTranslation } from '../lib/i18n-context';
+import { createHistoryItem, saveHistoryItem } from '../utils/history';
 
 interface Message {
   id: string;
@@ -224,37 +225,62 @@ export function DevicePanel({
         );
       },
       (event: DoneEvent) => {
+        const updatedAgentMessage = {
+          ...agentMessage,
+          content: event.message,
+          success: event.success,
+          isStreaming: false,
+          steps: event.steps,
+          thinking: [...thinkingList],
+          actions: [...actionsList],
+          timestamp: new Date(),
+        };
+
         setMessages(prev =>
           prev.map(msg =>
-            msg.id === agentMessageId
-              ? {
-                  ...msg,
-                  content: event.message,
-                  success: event.success,
-                  isStreaming: false,
-                }
-              : msg
+            msg.id === agentMessageId ? updatedAgentMessage : msg
           )
         );
         setLoading(false);
         chatStreamRef.current = null;
+
+        // 保存到历史记录
+        const historyItem = createHistoryItem(
+          deviceId,
+          deviceName,
+          userMessage,
+          updatedAgentMessage
+        );
+        saveHistoryItem(deviceId, historyItem);
       },
       (event: ErrorEvent) => {
+        const updatedAgentMessage = {
+          ...agentMessage,
+          content: `Error: ${event.message}`,
+          success: false,
+          isStreaming: false,
+          thinking: [...thinkingList],
+          actions: [...actionsList],
+          timestamp: new Date(),
+        };
+
         setMessages(prev =>
           prev.map(msg =>
-            msg.id === agentMessageId
-              ? {
-                  ...msg,
-                  content: `Error: ${event.message}`,
-                  success: false,
-                  isStreaming: false,
-                }
-              : msg
+            msg.id === agentMessageId ? updatedAgentMessage : msg
           )
         );
         setLoading(false);
         setError(event.message);
         chatStreamRef.current = null;
+
+        // 保存失败的任务到历史记录
+        const historyItem = createHistoryItem(
+          deviceId,
+          deviceName,
+          userMessage,
+          updatedAgentMessage
+        );
+        saveHistoryItem(deviceId, historyItem);
       }
     );
 
@@ -511,7 +537,7 @@ export function DevicePanel({
                 ) : (
                   <div className="max-w-[75%]">
                     <div className="chat-bubble-user px-4 py-3">
-                      <p className="whitespace-pre-wrap text-white dark:text-white">
+                      <p className="whitespace-pre-wrap">
                         {message.content}
                       </p>
                     </div>

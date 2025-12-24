@@ -12,6 +12,7 @@ import {
 } from '../api';
 import { DeviceSidebar } from '../components/DeviceSidebar';
 import { DevicePanel } from '../components/DevicePanel';
+import { HistoryDialog } from '../components/HistoryDialog';
 import { Toast, type ToastType } from '../components/Toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -85,6 +86,9 @@ function ChatComponent() {
 
   const [config, setConfig] = useState<ConfigSaveRequest | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyDeviceId, setHistoryDeviceId] = useState('');
+  const [historyDeviceName, setHistoryDeviceName] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [tempConfig, setTempConfig] = useState({
     base_url: '',
@@ -229,6 +233,15 @@ function ChatComponent() {
     } catch (e) {
       showToast(t.toasts.wifiDisconnectError, 'error');
       console.error('Disconnect WiFi error:', e);
+    }
+  };
+
+  const handleOpenHistory = () => {
+    if (currentDeviceId) {
+      const device = devices.find(d => d.id === currentDeviceId);
+      setHistoryDeviceId(currentDeviceId);
+      setHistoryDeviceName(device?.model || 'Unknown Device');
+      setShowHistory(true);
     }
   };
 
@@ -408,12 +421,21 @@ function ChatComponent() {
         </DialogContent>
       </Dialog>
 
+      {/* History Dialog */}
+      <HistoryDialog
+        open={showHistory}
+        onOpenChange={setShowHistory}
+        deviceId={historyDeviceId}
+        deviceName={historyDeviceName}
+      />
+
       {/* Sidebar */}
       <DeviceSidebar
         devices={devices}
         currentDeviceId={currentDeviceId}
         onSelectDevice={setCurrentDeviceId}
         onOpenConfig={() => setShowConfig(true)}
+        onOpenHistory={handleOpenHistory}
         onConnectWifi={handleConnectWifi}
         onDisconnectWifi={handleDisconnectWifi}
       />
