@@ -39,6 +39,7 @@ import {
   saveHistoryItem,
   loadHistoryItems,
   clearHistory,
+  deleteHistoryItem,
 } from '../utils/history';
 import type { HistoryItem } from '../types/history';
 import { HistoryItemCard } from './HistoryItemCard';
@@ -220,6 +221,12 @@ export function DevicePanel({
       clearHistory(deviceId);
       setHistoryItems([]);
     }
+  };
+
+  const handleDeleteItem = (itemId: string) => {
+    deleteHistoryItem(deviceId, itemId);
+    // 从列表中移除已删除的项
+    setHistoryItems(prev => prev.filter(item => item.id !== itemId));
   };
   // Re-initialize when config changes (for already initialized devices)
   useEffect(() => {
@@ -518,6 +525,7 @@ export function DevicePanel({
                           key={item.id}
                           item={item}
                           onSelect={handleSelectHistory}
+                          onDelete={handleDeleteItem}
                         />
                       ))
                     ) : (

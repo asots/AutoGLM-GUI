@@ -114,6 +114,24 @@ export function loadHistoryItems(deviceId: string): HistoryItem[] {
 }
 
 /**
+ * 删除单条历史记录
+ */
+export function deleteHistoryItem(deviceId: string, itemId: string): void {
+  try {
+    const key = `history-${deviceId}`;
+    const stored = localStorage.getItem(key);
+    if (!stored) return;
+
+    const history: HistoryItem[] = JSON.parse(stored);
+    const filtered = history.filter(item => item.id !== itemId);
+
+    localStorage.setItem(key, JSON.stringify(filtered));
+  } catch (error) {
+    console.warn('Failed to delete history item:', error);
+  }
+}
+
+/**
  * 清空设备的所有历史记录
  */
 export function clearHistory(deviceId: string): void {

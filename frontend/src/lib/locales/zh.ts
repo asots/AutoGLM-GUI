@@ -130,6 +130,8 @@ export const zh = {
     failed: '失败',
     clearAll: '清空全部',
     clearAllConfirm: '确认清空该设备的所有历史记录？',
+    deleteItem: '删除',
+    deleteConfirm: '确认删除这条历史记录？',
     step: '第 {number} 步',
     viewAction: '查看动作',
     finalResult: '最终结果',

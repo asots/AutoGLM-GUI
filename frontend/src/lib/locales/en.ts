@@ -131,6 +131,8 @@ export const en = {
     failed: 'Failed',
     clearAll: 'Clear All',
     clearAllConfirm: 'Clear all history for this device?',
+    deleteItem: 'Delete',
+    deleteConfirm: 'Delete this history item?',
     step: 'Step {number}',
     viewAction: 'View action',
     finalResult: 'Final Result',
