@@ -309,9 +309,7 @@ class PhoneAgentManager:
             # Sync with DeviceManager
             from AutoGLM_GUI.device_manager import DeviceManager
 
-            DeviceManager.get_instance().update_initialization_status(
-                device_id, False
-            )
+            DeviceManager.get_instance().update_initialization_status(device_id, False)
 
             logger.info(f"Agent destroyed for device {device_id}")
 

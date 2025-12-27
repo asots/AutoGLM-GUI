@@ -470,7 +470,7 @@ export function DevicePanel({
         chatStreamRef.current = null;
 
         // Show feedback
-        setFeedbackMessage(t('chat.aborted') || 'Chat aborted');
+        setFeedbackMessage(t.chat.aborted);
         setFeedbackType('success');
         setTimeout(() => setFeedbackMessage(null), 2000);
       }
@@ -485,6 +485,9 @@ export function DevicePanel({
     deviceSerial,
     deviceName,
     handleInit,
+    t,
+    setFeedbackMessage,
+    setFeedbackType,
   ]);
 
   const handleReset = useCallback(async () => {
@@ -514,12 +517,12 @@ export function DevicePanel({
       await abortChat(deviceId);
 
       // Show feedback
-      setFeedbackMessage(t('chat.aborted'));
+      setFeedbackMessage(t.chat.aborted);
       setFeedbackType('success');
       setTimeout(() => setFeedbackMessage(null), 2000);
     } catch (error) {
       console.error('Failed to abort chat:', error);
-      setFeedbackMessage(t('chat.abortFailed'));
+      setFeedbackMessage(t.chat.abortFailed);
       setFeedbackType('error');
       setTimeout(() => setFeedbackMessage(null), 2000);
     } finally {
@@ -955,7 +958,7 @@ export function DevicePanel({
                 size="icon"
                 variant="destructive"
                 className="h-10 w-10 rounded-full flex-shrink-0"
-                title={t.chat?.abortChat || 'Abort Chat'}
+                title={t.chat.abortChat}
               >
                 {aborting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

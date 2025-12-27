@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from AutoGLM_GUI.config import config
+from AutoGLM_GUI.logger import logger
 from AutoGLM_GUI.phone_agent_patches import apply_patches
 from AutoGLM_GUI.schemas import (
     AbortRequest,
@@ -24,8 +25,6 @@ from AutoGLM_GUI.schemas import (
     StatusResponse,
 )
 from AutoGLM_GUI.state import (
-    agent_configs,
-    agents,
     non_blocking_takeover,
 )
 from AutoGLM_GUI.version import APP_VERSION
@@ -146,7 +145,7 @@ def init_agent(request: InitRequest) -> dict:
 @router.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
     """发送任务给 Agent 并执行。"""
-    from AutoGLM_GUI.exceptions import AgentNotInitializedError, DeviceBusyError
+    from AutoGLM_GUI.exceptions import DeviceBusyError
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     device_id = request.device_id
@@ -167,8 +166,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             return ChatResponse(result=result, steps=steps, success=True)
     except DeviceBusyError:
         raise HTTPException(
-            status_code=409,
-            detail=f"Device {device_id} is busy. Please wait."
+            status_code=409, detail=f"Device {device_id} is busy. Please wait."
         )
     except Exception as e:
         return ChatResponse(result=str(e), steps=0, success=False)
