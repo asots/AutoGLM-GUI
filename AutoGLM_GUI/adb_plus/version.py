@@ -29,9 +29,7 @@ def get_adb_version(adb_path: str = "adb") -> Optional[Tuple[int, int, int]]:
 
         # Parse "Android Debug Bridge version 1.0.41"
         # Or "Version 34.0.5-11580240"
-        match = re.search(
-            r"version (\d+)\.(\d+)\.(\d+)", result.stdout, re.IGNORECASE
-        )
+        match = re.search(r"version (\d+)\.(\d+)\.(\d+)", result.stdout, re.IGNORECASE)
         if match:
             return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
 

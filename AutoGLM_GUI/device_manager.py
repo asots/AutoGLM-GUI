@@ -313,14 +313,84 @@ class DeviceManager:
 
             return None
 
+    def get_agent_by_serial(self, serial: str) -> Optional[str]:
+        """
+        Find device_id of initialized PhoneAgent for this device serial.
+
+        This method helps locate agents when device_id changes due to
+        connection switching (e.g., USB → WiFi).
+
+        Args:
+            serial: Hardware serial number of the device
+
+        Returns:
+            device_id of the initialized agent if found, None otherwise
+
+        Example:
+            >>> # Device was initialized via USB
+            >>> agents["ABC123"] = PhoneAgent(device_id="ABC123")
+            >>>
+            >>> # User switches to WiFi, device_id changes
+            >>> dm = DeviceManager.get_instance()
+            >>> agent_device_id = dm.get_agent_by_serial("ABC123")
+            >>> if agent_device_id:
+            >>>     agent = agents[agent_device_id]  # Found!
+        """
+        from AutoGLM_GUI.state import agents
+
+        with self._devices_lock:
+            device = self._devices.get(serial)
+            if not device:
+                return None
+
+            # Check all connections for initialized agents
+            for conn in device.connections:
+                if conn.device_id in agents:
+                    logger.debug(
+                        f"Found agent for serial {serial} at device_id {conn.device_id}"
+                    )
+                    return conn.device_id
+
+            return None
+
     def update_initialization_status(
         self, device_id: str, is_initialized: bool
     ) -> None:
-        """Update device initialization status (device_id -> serial mapping)."""
+        """
+        Update device initialization status with connection switch detection.
+
+        Args:
+            device_id: Current device_id (may differ from initial device_id)
+            is_initialized: Initialization status
+
+        Note:
+            This method detects connection switching:
+            - If agent exists under different device_id for same serial, logs warning
+            - Helps identify cases where agent reinitialization may be needed
+        """
+        from AutoGLM_GUI.state import agents
+
         device = self.get_device_by_device_id(device_id)
 
         if device:
             with self._devices_lock:
+                # Check for connection switching
+                # (agent exists under different device_id for same device)
+                if is_initialized:
+                    # Find if agent exists under different device_id
+                    for conn in device.connections:
+                        if conn.device_id != device_id and conn.device_id in agents:
+                            # Connection switch detected!
+                            logger.warning(
+                                f"Connection switch detected for device {device.serial}: "
+                                f"{conn.device_id} → {device_id}. "
+                                f"Agent exists under old device_id. "
+                                f"Consider using DeviceManager.get_agent_by_serial() "
+                                f"to locate the existing agent."
+                            )
+                            break
+
+                # Update status
                 device.is_initialized = is_initialized
                 logger.debug(
                     f"Device {device.serial} (via {device_id}) "
@@ -353,9 +423,7 @@ class DeviceManager:
             if self._mdns_supported:
                 logger.info("ADB mDNS discovery is supported")
             else:
-                logger.info(
-                    "ADB mDNS discovery not available (requires ADB 30.0.0+)"
-                )
+                logger.info("ADB mDNS discovery not available (requires ADB 30.0.0+)")
 
         return self._mdns_supported
 
@@ -529,7 +597,9 @@ class DeviceManager:
                 managed = self._devices[serial]
                 managed.state = DeviceState.DISCONNECTED
                 managed.last_seen = time.time()
-                logger.warning(f"Device disconnected: {serial} ({managed.model or 'Unknown'})")
+                logger.warning(
+                    f"Device disconnected: {serial} ({managed.model or 'Unknown'})"
+                )
 
                 # Remove reverse mappings
                 for conn in managed.connections:
@@ -537,7 +607,10 @@ class DeviceManager:
 
         # Step 5: Discover mDNS devices (if enabled and supported)
         if self._enable_mdns_discovery and self._check_mdns_support():
-            from AutoGLM_GUI.adb_plus import discover_mdns_devices, extract_serial_from_mdns
+            from AutoGLM_GUI.adb_plus import (
+                discover_mdns_devices,
+                extract_serial_from_mdns,
+            )
 
             try:
                 mdns_devices = discover_mdns_devices(self._adb_path)
@@ -608,8 +681,7 @@ class DeviceManager:
 
         # Calculate new interval
         self._current_interval = min(
-            self._min_interval
-            * (self._backoff_multiplier**self._consecutive_failures),
+            self._min_interval * (self._backoff_multiplier**self._consecutive_failures),
             self._max_interval,
         )
 
@@ -691,7 +763,9 @@ class DeviceManager:
 
         return (ok, msg)
 
-    def connect_wifi_manual(self, ip: str, port: int) -> tuple[bool, str, Optional[str]]:
+    def connect_wifi_manual(
+        self, ip: str, port: int
+    ) -> tuple[bool, str, Optional[str]]:
         """Manually connect to WiFi device (without USB).
 
         Args:
@@ -793,4 +867,8 @@ class DeviceManager:
         logger.info(
             f"Successfully paired and connected to WiFi device: {connection_address}"
         )
-        return (True, f"Successfully paired and connected to {connection_address}", connection_address)
+        return (
+            True,
+            f"Successfully paired and connected to {connection_address}",
+            connection_address,
+        )

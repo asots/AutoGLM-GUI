@@ -2,7 +2,6 @@
 
 from fastapi import APIRouter
 
-from AutoGLM_GUI.adb_plus import get_device_serial
 from AutoGLM_GUI.adb_plus.qr_pair import qr_pairing_manager
 from AutoGLM_GUI.logger import logger
 
@@ -22,7 +21,6 @@ from AutoGLM_GUI.schemas import (
     QRPairStatusResponse,
     QRPairCancelResponse,
 )
-from AutoGLM_GUI.state import agents
 
 router = APIRouter()
 
