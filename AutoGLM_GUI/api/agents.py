@@ -37,6 +37,15 @@ apply_patches()
 
 router = APIRouter()
 
+
+def _create_sse_event(
+    event_type: str, data: dict[str, Any], role: str = "assistant"
+) -> dict[str, Any]:
+    """Create an SSE event with standardized fields including role."""
+    event_data = {"type": event_type, "role": role, **data}
+    return event_data
+
+
 # Active chat sessions (device_id -> stop_event)
 # Used for aborting ongoing conversations
 _active_chats: dict[str, threading.Event] = {}
@@ -228,10 +237,9 @@ def chat_stream(request: ChatRequest):
                 def on_thinking_chunk(chunk: str):
                     """Emit thinking chunks as they arrive"""
                     if not stop_event.is_set():
-                        chunk_data = {
-                            "type": "thinking_chunk",
-                            "chunk": chunk,
-                        }
+                        chunk_data = _create_sse_event(
+                            "thinking_chunk", {"chunk": chunk}
+                        )
                         event_queue.put(("thinking_chunk", chunk_data))
 
                 # Create a new agent instance
@@ -262,7 +270,7 @@ def chat_stream(request: ChatRequest):
                         f"[Abort] Agent for device {device_id} received abort signal before starting steps"
                     )
                     yield "event: aborted\n"
-                    yield 'data: {"type": "aborted", "message": "Chat aborted by user"}\n\n'
+                    yield 'data: {"type": "aborted", "role": "assistant", "message": "Chat aborted by user"}\n\n'
                     return
 
                 # Run agent step in a separate thread
@@ -323,25 +331,29 @@ def chat_stream(request: ChatRequest):
                             raise error_result[0]
 
                         result = step_result[0]
-                        event_data = {
-                            "type": "step",
-                            "step": streaming_agent.step_count,
-                            "thinking": result.thinking,
-                            "action": result.action,
-                            "success": result.success,
-                            "finished": result.finished,
-                        }
+                        event_data = _create_sse_event(
+                            "step",
+                            {
+                                "step": streaming_agent.step_count,
+                                "thinking": result.thinking,
+                                "action": result.action,
+                                "success": result.success,
+                                "finished": result.finished,
+                            },
+                        )
 
                         yield "event: step\n"
                         yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 
                         if result.finished:
-                            done_data = {
-                                "type": "done",
-                                "message": result.message,
-                                "steps": streaming_agent.step_count,
-                                "success": result.success,
-                            }
+                            done_data = _create_sse_event(
+                                "done",
+                                {
+                                    "message": result.message,
+                                    "steps": streaming_agent.step_count,
+                                    "success": result.success,
+                                },
+                            )
                             yield "event: done\n"
                             yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
                             break
@@ -350,12 +362,14 @@ def chat_stream(request: ChatRequest):
                             streaming_agent.step_count
                             >= streaming_agent.agent_config.max_steps
                         ):
-                            done_data = {
-                                "type": "done",
-                                "message": "Max steps reached",
-                                "steps": streaming_agent.step_count,
-                                "success": result.success,
-                            }
+                            done_data = _create_sse_event(
+                                "done",
+                                {
+                                    "message": "Max steps reached",
+                                    "steps": streaming_agent.step_count,
+                                    "success": result.success,
+                                },
+                            )
                             yield "event: done\n"
                             yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
                             break
@@ -375,7 +389,7 @@ def chat_stream(request: ChatRequest):
                         f"[Abort] Agent for device {device_id} event loop terminated due to abort signal"
                     )
                     yield "event: aborted\n"
-                    yield 'data: {"type": "aborted", "message": "Chat aborted by user"}\n\n'
+                    yield 'data: {"type": "aborted", "role": "assistant", "message": "Chat aborted by user"}\n\n'
 
                 # Update original agent state (thread-safe due to device lock)
                 original_agent._context = streaming_agent._context
@@ -384,10 +398,12 @@ def chat_stream(request: ChatRequest):
                 original_agent.reset()
 
             except Exception as e:
-                error_data = {
-                    "type": "error",
-                    "message": str(e),
-                }
+                error_data = _create_sse_event(
+                    "error",
+                    {
+                        "message": str(e),
+                    },
+                )
                 yield "event: error\n"
                 yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
             finally:
