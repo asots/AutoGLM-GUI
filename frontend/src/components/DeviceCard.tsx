@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { Wifi, WifiOff, CheckCircle2, Smartphone, Loader2, XCircle, Clock } from 'lucide-react';
+import {
+  Wifi,
+  WifiOff,
+  CheckCircle2,
+  Smartphone,
+  Loader2,
+  XCircle,
+  Clock,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -208,14 +216,23 @@ export function DeviceCard({
                     : ''
                 }`}
               >
-                {agent.state === 'idle' && <CheckCircle2 className="w-3 h-3 mr-1" />}
-                {agent.state === 'busy' && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-                {agent.state === 'error' && <XCircle className="w-3 h-3 mr-1" />}
-                {agent.state === 'initializing' && <Clock className="w-3 h-3 mr-1" />}
+                {agent.state === 'idle' && (
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                )}
+                {agent.state === 'busy' && (
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                )}
+                {agent.state === 'error' && (
+                  <XCircle className="w-3 h-3 mr-1" />
+                )}
+                {agent.state === 'initializing' && (
+                  <Clock className="w-3 h-3 mr-1" />
+                )}
                 {agent.state === 'idle' && t.deviceCard.agentIdle}
                 {agent.state === 'busy' && t.deviceCard.agentBusy}
                 {agent.state === 'error' && t.deviceCard.agentError}
-                {agent.state === 'initializing' && t.deviceCard.agentInitializing}
+                {agent.state === 'initializing' &&
+                  t.deviceCard.agentInitializing}
               </Badge>
             ) : null}
           </div>
