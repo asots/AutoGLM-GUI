@@ -1,12 +1,22 @@
 import axios from 'redaxios';
 
+export interface AgentStatus {
+  state: 'idle' | 'busy' | 'error' | 'initializing';
+  created_at: number;
+  last_used: number;
+  error_message: string | null;
+  model_name: string;
+}
+
 export interface Device {
   id: string;
   serial: string; // Hardware serial number (always present)
   model: string;
   status: string;
   connection_type: string;
-  is_initialized: boolean;
+  state: string;
+  is_available_only: boolean;
+  agent: AgentStatus | null; // Agent runtime status (null if not initialized)
 }
 
 export interface DeviceListResponse {
@@ -284,7 +294,8 @@ export function sendMessageStream(
   onThinkingChunk: (event: ThinkingChunkEvent) => void,
   onStep: (event: StepEvent) => void,
   onDone: (event: DoneEvent) => void,
-  onError: (event: ErrorEvent) => void
+  onError: (event: ErrorEvent) => void,
+  onAborted?: (event: { type: 'aborted'; message: string }) => void
 ): { close: () => void } {
   const controller = new AbortController();
 
@@ -336,6 +347,11 @@ export function sendMessageStream(
               } else if (eventType === 'done') {
                 console.log('[SSE] Received done event:', data);
                 onDone(data as DoneEvent);
+              } else if (eventType === 'aborted') {
+                console.log('[SSE] Received aborted event:', data);
+                if (onAborted) {
+                  onAborted(data as { type: 'aborted'; message: string });
+                }
               } else if (eventType === 'error') {
                 console.log('[SSE] Received error event:', data);
                 onError(data as ErrorEvent);
@@ -348,7 +364,12 @@ export function sendMessageStream(
       }
     })
     .catch(error => {
-      if (error.name !== 'AbortError') {
+      if (error.name === 'AbortError') {
+        // User manually aborted the connection
+        if (onAborted) {
+          onAborted({ type: 'aborted', message: 'Connection aborted by user' });
+        }
+      } else {
         onError({ type: 'error', message: error.message });
       }
     });
@@ -369,6 +390,14 @@ export async function resetChat(deviceId: string): Promise<{
   device_id?: string;
 }> {
   const res = await axios.post('/api/reset', { device_id: deviceId });
+  return res.data;
+}
+
+export async function abortChat(deviceId: string): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const res = await axios.post('/api/chat/abort', { device_id: deviceId });
   return res.data;
 }
 

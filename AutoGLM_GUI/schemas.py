@@ -92,6 +92,12 @@ class ResetRequest(BaseModel):
     device_id: str  # 设备 ID（必填）
 
 
+class AbortRequest(BaseModel):
+    """中断对话请求。"""
+
+    device_id: str  # 设备 ID（必填）
+
+
 class ScreenshotRequest(BaseModel):
     device_id: str | None = None
 
@@ -279,8 +285,31 @@ class TouchUpResponse(BaseModel):
     error: str | None = None
 
 
+class AgentStatusResponse(BaseModel):
+    """Agent 运行状态信息."""
+
+    state: str  # "idle" | "busy" | "error" | "initializing"
+    created_at: float  # Unix 时间戳
+    last_used: float  # Unix 时间戳
+    error_message: str | None = None
+    model_name: str  # 来自 ModelConfig
+
+
+class DeviceResponse(BaseModel):
+    """设备信息及可选的 Agent 状态."""
+
+    id: str
+    serial: str
+    model: str
+    status: str
+    connection_type: str
+    state: str
+    is_available_only: bool
+    agent: AgentStatusResponse | None = None
+
+
 class DeviceListResponse(BaseModel):
-    devices: list[dict]
+    devices: list[DeviceResponse]  # 从 list[dict] 改为强类型
 
 
 class ConfigResponse(BaseModel):

@@ -28,6 +28,9 @@ export const en = {
     saveConfig: 'Save Configuration',
     noDevices: 'No devices found',
     getApiKey: 'Get API Key',
+    aborted: 'Chat aborted',
+    abortFailed: 'Failed to abort chat',
+    abortChat: 'Abort Chat',
   },
   deviceSidebar: {
     devices: 'Devices',
@@ -133,6 +136,10 @@ export const en = {
     connectViaWifi: 'Connect via WiFi',
     disconnectWifi: 'Disconnect WiFi',
     ready: 'Ready',
+    agentIdle: 'Idle',
+    agentBusy: 'Busy',
+    agentError: 'Error',
+    agentInitializing: 'Initializing',
     connectWifiTitle: 'Connect via WiFi',
     connectWifiContent:
       'Switch to WiFi connection? Ensure your device and computer are on the same network.',
