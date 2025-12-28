@@ -146,6 +146,25 @@ function getResourcePath(relativePath) {
   }
 }
 
+/**
+ * 获取日志文件路径（开发模式 vs 打包模式）
+ * @returns {string} 日志文件路径
+ */
+function getLogFilePath() {
+  const isDev = process.argv.includes('--dev') || !app.isPackaged;
+
+  if (isDev) {
+    // 开发模式：使用项目目录下的 logs 文件夹
+    return path.join(__dirname, '..', 'logs', 'autoglm_{time:YYYY-MM-DD}.log');
+  } else {
+    // 打包模式：使用用户数据目录（跨平台标准位置）
+    // Windows: %APPDATA%/AutoGLM GUI/logs/
+    // macOS: ~/Library/Application Support/AutoGLM GUI/logs/
+    // Linux: ~/.config/AutoGLM GUI/logs/
+    return path.join(app.getPath('userData'), 'logs', 'autoglm_{time:YYYY-MM-DD}.log');
+  }
+}
+
 // ==================== 后端管理 ====================
 
 /**
@@ -156,11 +175,14 @@ async function startBackend() {
   perfMark('开始启动后端进程');
   const isDev = process.argv.includes('--dev');
 
-  // 确定后端可执行文件路径
+  // 获取日志文件路径（开发模式使用控制台，打包模式使用文件）
+  const logFilePath = getLogFilePath();
+
+  // 确定后端可执行文件路径和参数
   let backendExe, args;
 
   if (isDev) {
-    // 开发模式：使用 uv run
+    // 开发模式：使用 uv run（仅控制台日志）
     backendExe = 'uv';
     args = [
       'run',
@@ -169,7 +191,7 @@ async function startBackend() {
       '--port', String(backendPort)
     ];
   } else {
-    // 生产模式：使用打包的可执行文件
+    // 生产模式：使用打包的可执行文件（文件日志）
     const backendDir = getResourcePath('backend');
     if (process.platform === 'win32') {
       backendExe = path.join(backendDir, 'autoglm-gui.exe');
@@ -177,11 +199,30 @@ async function startBackend() {
       backendExe = path.join(backendDir, 'autoglm-gui');
     }
 
-    args = [
-      '--no-browser',
-      '--port', String(backendPort),
-      '--no-log-file'  // 禁用文件日志，避免权限问题
-    ];
+    // 创建日志目录并配置参数
+    try {
+      const fs = require('fs');
+      const logDir = path.dirname(logFilePath);
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      console.log(`✓ 日志目录: ${logDir}`);
+
+      args = [
+        '--no-browser',
+        '--port', String(backendPort),
+        '--log-level', 'INFO',
+        '--log-file', logFilePath
+      ];
+    } catch (error) {
+      console.error('创建日志目录失败，将使用控制台日志:', error);
+      // 回退到控制台日志
+      args = [
+        '--no-browser',
+        '--port', String(backendPort),
+        '--no-log-file'
+      ];
+    }
   }
 
   // 配置环境变量
@@ -201,6 +242,11 @@ async function startBackend() {
   }
 
   console.log(`启动后端: ${backendExe} ${args.join(' ')}`);
+
+  // 添加日志信息提示（仅生产模式）
+  if (!isDev) {
+    console.log(`日志文件: ${logFilePath}`);
+  }
 
   perfMark('准备启动后端进程');
   // 启动后端进程
