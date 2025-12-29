@@ -14,7 +14,7 @@ from queue import Queue
 from phone_agent.model.client import ModelConfig
 
 from AutoGLM_GUI.logger import logger
-from .decision_model import DecisionModel, Decision, TaskPlan
+from .decision_model import DecisionModel, Decision, TaskPlan, ActionSequence, ActionStep
 from .vision_model import VisionModel, ScreenDescription, ExecutionResult
 from .protocols import (
     DecisionModelConfig,
@@ -172,6 +172,11 @@ class DualModelAgent:
         self.step_count: int = 0
         self.stop_event = threading.Event()
 
+        # TURBO 模式状态
+        self.action_sequence: Optional[ActionSequence] = None
+        self.current_action_index: int = 0
+        self.executed_actions: list[str] = []
+
         # 异常状态追踪
         self.anomaly_state = AnomalyState()
 
@@ -205,8 +210,20 @@ class DualModelAgent:
         self.step_count = 0
         self.stop_event.clear()
         self.anomaly_state.reset()
+        self.executed_actions = []
+        self.current_action_index = 0
 
         logger.info(f"开始执行任务: {task[:50]}... (模式: {self.thinking_mode.value})")
+
+        # TURBO 模式使用批量执行
+        if self.thinking_mode == ThinkingMode.TURBO:
+            return self._run_turbo(task)
+
+        # FAST/DEEP 模式使用原有逻辑
+        return self._run_standard(task)
+
+    def _run_standard(self, task: str) -> dict:
+        """标准执行模式 (FAST/DEEP)"""
 
         try:
             # 1. 大模型分析任务
@@ -305,6 +322,276 @@ class DualModelAgent:
                 "message": f"执行异常: {e}",
                 "steps": self.step_count,
             }
+
+    def _run_turbo(self, task: str) -> dict:
+        """
+        TURBO 模式执行
+
+        一次性生成操作序列，批量执行，仅异常时调用决策模型
+        """
+        try:
+            # 1. 大模型一次性生成操作序列
+            self._update_state(decision_stage=ModelStage.ANALYZING, decision_active=True)
+            self._emit_event(
+                DualModelEventType.DECISION_START,
+                {"stage": "analyzing", "task": task, "mode": "turbo"},
+                ModelRole.DECISION,
+            )
+
+            if self.callbacks.on_decision_start:
+                self.callbacks.on_decision_start()
+
+            self.action_sequence = self.decision_model.analyze_task_turbo(
+                task,
+                on_thinking=self._on_decision_thinking,
+                on_answer=self._on_decision_answer,
+            )
+
+            self.task_plan = self.action_sequence.to_plan()
+            self._emit_event(
+                DualModelEventType.TASK_PLAN,
+                {"plan": self.task_plan.to_dict(), "actions": self.action_sequence.to_dict()},
+                ModelRole.DECISION,
+            )
+
+            if self.callbacks.on_task_plan:
+                self.callbacks.on_task_plan(self.task_plan)
+
+            self.state.task_plan = self.task_plan.steps
+            self.state.total_steps = len(self.action_sequence.actions)
+
+            logger.info(f"[TURBO] 生成 {len(self.action_sequence.actions)} 个操作步骤")
+
+            # 2. 批量执行操作序列
+            self.current_action_index = 0
+            finished = False
+            last_message = ""
+            replan_count = 0
+            max_replans = 3
+
+            while not finished and self.step_count < self.max_steps:
+                if self.stop_event.is_set():
+                    logger.info("[TURBO] 任务被中断")
+                    return {
+                        "success": False,
+                        "message": "任务被用户中断",
+                        "steps": self.step_count,
+                    }
+
+                # 检查是否还有操作需要执行
+                if self.current_action_index >= len(self.action_sequence.actions):
+                    finished = True
+                    last_message = "操作序列执行完成"
+                    break
+
+                self.step_count += 1
+                action = self.action_sequence.actions[self.current_action_index]
+                logger.info(f"[TURBO] 执行步骤 {self.step_count}: {action.action} -> {action.target}")
+
+                # 执行单步操作
+                step_result = self._execute_turbo_step(action)
+
+                if step_result.error or not step_result.success:
+                    logger.warning(f"[TURBO] 步骤执行失败: {step_result.error}")
+                    self.anomaly_state.record_failure()
+
+                    # 检查是否需要重新规划
+                    if self.anomaly_state.has_anomaly() and replan_count < max_replans:
+                        replan_count += 1
+                        logger.info(f"[TURBO] 触发重新规划 ({replan_count}/{max_replans})")
+
+                        # 获取当前屏幕状态
+                        screenshot_base64, _, _ = self.vision_model.capture_screenshot()
+                        screen_desc = self.vision_model.describe_screen(screenshot_base64)
+
+                        # 重新规划
+                        new_sequence = self.decision_model.replan(
+                            current_state=screen_desc.description,
+                            executed_actions=self.executed_actions,
+                            error_info=step_result.error or "操作失败",
+                            on_thinking=self._on_decision_thinking,
+                            on_answer=self._on_decision_answer,
+                        )
+
+                        if new_sequence.actions:
+                            self.action_sequence = new_sequence
+                            self.current_action_index = 0
+                            self.anomaly_state.reset()
+                            logger.info(f"[TURBO] 重新规划成功，新增 {len(new_sequence.actions)} 个步骤")
+                        else:
+                            logger.warning("[TURBO] 重新规划返回空序列")
+
+                    if self.callbacks.on_error:
+                        self.callbacks.on_error(step_result.error or "执行失败")
+                    continue
+
+                # 成功执行
+                self.anomaly_state.record_success()
+                self.executed_actions.append(f"{action.action}: {action.target}")
+                self.current_action_index += 1
+
+                if step_result.finished:
+                    finished = True
+                    last_message = "任务完成"
+
+                if self.callbacks.on_step_complete:
+                    self.callbacks.on_step_complete(self.step_count, step_result.success)
+
+                # 步骤间短延迟
+                time.sleep(0.3)
+
+            # 3. 完成
+            success = finished
+            message = last_message if finished else f"达到最大步数限制({self.max_steps})"
+
+            self._emit_event(
+                DualModelEventType.TASK_COMPLETE,
+                {"success": success, "message": message, "steps": self.step_count},
+            )
+
+            if self.callbacks.on_task_complete:
+                self.callbacks.on_task_complete(success, message)
+
+            logger.info(f"[TURBO] 任务完成: success={success}, steps={self.step_count}")
+
+            return {
+                "success": success,
+                "message": message,
+                "steps": self.step_count,
+            }
+
+        except Exception as e:
+            logger.exception(f"[TURBO] 任务执行异常: {e}")
+            self._emit_event(
+                DualModelEventType.ERROR,
+                {"message": str(e)},
+            )
+            return {
+                "success": False,
+                "message": f"执行异常: {e}",
+                "steps": self.step_count,
+            }
+
+    def _execute_turbo_step(self, action: ActionStep) -> StepResult:
+        """
+        TURBO 模式执行单步操作
+
+        直接执行操作，不调用决策模型（除非需要生成内容）
+        """
+        try:
+            # 截图
+            screenshot_base64, width, height = self.vision_model.capture_screenshot()
+
+            # 检查截图是否重复
+            is_same_screen = self.anomaly_state.check_screenshot(screenshot_base64)
+            if is_same_screen:
+                logger.warning(f"[TURBO] 屏幕连续 {self.anomaly_state.consecutive_same_screen} 次无变化")
+
+            self._update_state(
+                vision_stage=ModelStage.EXECUTING,
+                vision_active=True,
+                decision_active=False,
+            )
+
+            # 处理需要生成内容的操作
+            content = action.content
+            if action.need_generate and action.action == "type":
+                logger.info("[TURBO] 需要生成人性化内容，调用决策模型")
+                self._update_state(decision_stage=ModelStage.GENERATING, decision_active=True)
+                self._emit_event(
+                    DualModelEventType.DECISION_START,
+                    {"stage": "generating", "content_type": action.target},
+                    ModelRole.DECISION,
+                )
+
+                # 获取屏幕描述作为上下文
+                screen_desc = self.vision_model.describe_screen(screenshot_base64)
+
+                content = self.decision_model.generate_humanize_content(
+                    task_context=self.current_task,
+                    current_scene=screen_desc.description,
+                    content_type=action.target or "回复内容",
+                    on_thinking=self._on_decision_thinking,
+                    on_answer=self._on_decision_answer,
+                )
+
+                self._emit_event(
+                    DualModelEventType.CONTENT_GENERATION,
+                    {"content": content, "purpose": action.target},
+                    ModelRole.DECISION,
+                )
+
+                if self.callbacks.on_content_generation:
+                    self.callbacks.on_content_generation(content, action.target)
+
+            # 构建决策对象
+            decision_dict = {
+                "action": action.action,
+                "target": action.target,
+                "content": content,
+                "direction": action.direction,
+            }
+
+            self._emit_event(
+                DualModelEventType.ACTION_START,
+                {"action": decision_dict},
+                ModelRole.VISION,
+            )
+
+            if self.callbacks.on_action_start:
+                self.callbacks.on_action_start(decision_dict)
+
+            # 执行操作
+            execution = self.vision_model.execute_decision(
+                decision=decision_dict,
+                screenshot_base64=screenshot_base64,
+            )
+
+            self._update_state(
+                vision_action=f"{execution.action_type}: {execution.target}",
+                vision_stage=ModelStage.IDLE,
+                vision_active=False,
+            )
+
+            self._emit_event(
+                DualModelEventType.ACTION_RESULT,
+                {
+                    "success": execution.success,
+                    "action_type": execution.action_type,
+                    "target": execution.target,
+                    "position": execution.position,
+                    "message": execution.message,
+                },
+                ModelRole.VISION,
+            )
+
+            if self.callbacks.on_action_result:
+                self.callbacks.on_action_result(execution)
+
+            self._emit_event(
+                DualModelEventType.STEP_COMPLETE,
+                {
+                    "step": self.step_count,
+                    "success": execution.success,
+                    "finished": execution.finished,
+                },
+            )
+
+            return StepResult(
+                step=self.step_count,
+                success=execution.success,
+                finished=execution.finished,
+                execution=execution,
+            )
+
+        except Exception as e:
+            logger.exception(f"[TURBO] 步骤执行异常: {e}")
+            return StepResult(
+                step=self.step_count,
+                success=False,
+                finished=False,
+                error=str(e),
+            )
 
     def _execute_step(self) -> StepResult:
         """执行单步操作"""
@@ -544,6 +831,11 @@ class DualModelAgent:
         self.state = DualModelState()
         self.anomaly_state.reset()
         self.decision_model.reset()
+
+        # TURBO 模式状态重置
+        self.action_sequence = None
+        self.current_action_index = 0
+        self.executed_actions = []
 
         # 清空事件队列
         while not self.event_queue.empty():

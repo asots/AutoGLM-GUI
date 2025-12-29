@@ -1,5 +1,106 @@
 # 开发日志
 
+## [2025-12-29] 双模型系统优化 - TURBO 极速模式
+
+### 需求背景
+
+用户反馈：模型与识图模型的交互过于慢。原有 FAST 模式下每一步都需要：
+1. 视觉模型描述屏幕
+2. 决策模型做决策
+3. 视觉模型执行操作
+
+这导致每步至少 2-3 次模型调用，交互效率低下。
+
+### 优化方案
+
+新增 **TURBO（极速）** 模式，核心思路：
+- 决策模型一次性生成完整的操作序列
+- 视觉模型直接按序列执行，不需要每步都调用决策模型
+- 只有在以下情况才重新调用决策模型：
+  - 操作失败或异常
+  - 需要生成人性化内容（回复消息、发帖等）
+  - 遇到意外情况（弹窗等）
+
+### 实现内容
+
+1. **protocols.py** - 添加 TURBO 模式定义和提示词
+   - 新增 `ThinkingMode.TURBO` 枚举值
+   - 新增 `DECISION_SYSTEM_PROMPT_TURBO` 提示词
+   - 新增 `DECISION_REPLAN_PROMPT` 重新规划提示词
+   - 新增 `DECISION_HUMANIZE_PROMPT` 人性化内容生成提示词
+
+2. **decision_model.py** - 添加批量操作方法
+   - 新增 `ActionStep` 数据类（单个操作步骤）
+   - 新增 `ActionSequence` 数据类（操作序列）
+   - 新增 `analyze_task_turbo()` - 一次性生成操作序列
+   - 新增 `replan()` - 遇到问题时重新规划
+   - 新增 `generate_humanize_content()` - 生成人性化内容
+
+3. **dual_agent.py** - 实现 TURBO 执行逻辑
+   - 新增 TURBO 模式状态变量（action_sequence, current_action_index, executed_actions）
+   - `run()` 方法根据模式分流到 `_run_standard()` 或 `_run_turbo()`
+   - 新增 `_run_turbo()` - TURBO 模式主循环
+   - 新增 `_execute_turbo_step()` - 执行单步操作，仅需要时调用决策模型
+
+### 操作序列格式
+
+```json
+{
+    "type": "action_sequence",
+    "summary": "任务简述",
+    "actions": [
+        {"action": "launch", "target": "微信"},
+        {"action": "tap", "target": "搜索框"},
+        {"action": "type", "content": "搜索内容", "need_generate": false},
+        {"action": "tap", "target": "发送按钮"}
+    ],
+    "humanize_steps": [2]
+}
+```
+
+- `need_generate: true` 标记需要决策模型生成内容的步骤
+- `humanize_steps` 列出需要人性化处理的步骤索引
+
+### 异常处理机制
+
+- 连续失败或屏幕无变化时触发重新规划
+- 最多重新规划 3 次
+- 重规划时调用 `replan()` 获取新的操作序列
+
+### 文件变更
+
+- `AutoGLM_GUI/dual_model/protocols.py` - 添加 TURBO 模式定义
+- `AutoGLM_GUI/dual_model/decision_model.py` - 添加批量操作方法
+- `AutoGLM_GUI/dual_model/dual_agent.py` - 实现 TURBO 执行逻辑
+- `AutoGLM_GUI/dual_model/__init__.py` - 导出新类型
+
+### 使用方式
+
+```python
+from AutoGLM_GUI.dual_model import DualModelAgent, ThinkingMode
+
+agent = DualModelAgent(
+    decision_config=...,
+    vision_config=...,
+    device_id="...",
+    thinking_mode=ThinkingMode.TURBO,  # 使用极速模式
+)
+
+result = agent.run("打开微信发送消息给张三")
+```
+
+### 性能提升
+
+| 模式 | 每步模型调用 | 交互延迟 |
+|------|-------------|---------|
+| DEEP | 2-3 次 | 高 |
+| FAST | 2-3 次 | 中 |
+| TURBO | 0-1 次 | 低 |
+
+TURBO 模式下，大部分步骤只需要视觉模型执行操作，不需要决策模型参与，显著提升执行速度。
+
+---
+
 ## [2025-12-29] Bug 修复 - 设备列表布局与导入错误
 
 ### 问题发现

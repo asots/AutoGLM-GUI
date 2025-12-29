@@ -6,7 +6,7 @@
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from openai import OpenAI
@@ -16,6 +16,9 @@ from .protocols import (
     DecisionModelConfig,
     DECISION_SYSTEM_PROMPT,
     DECISION_SYSTEM_PROMPT_FAST,
+    DECISION_SYSTEM_PROMPT_TURBO,
+    DECISION_REPLAN_PROMPT,
+    DECISION_HUMANIZE_PROMPT,
     ModelStage,
     ThinkingMode,
 )
@@ -35,6 +38,53 @@ class TaskPlan:
             "steps": self.steps,
             "estimated_actions": self.estimated_actions,
         }
+
+
+@dataclass
+class ActionStep:
+    """单个操作步骤"""
+    action: str
+    target: str = ""
+    content: Optional[str] = None
+    need_generate: bool = False
+    direction: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        result = {"action": self.action, "target": self.target}
+        if self.content:
+            result["content"] = self.content
+        if self.need_generate:
+            result["need_generate"] = True
+        if self.direction:
+            result["direction"] = self.direction
+        return result
+
+
+@dataclass
+class ActionSequence:
+    """操作序列（TURBO模式）"""
+    summary: str
+    actions: list[ActionStep]
+    checkpoints: list[str] = field(default_factory=list)
+    humanize_steps: list[int] = field(default_factory=list)
+    raw_response: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "summary": self.summary,
+            "actions": [a.to_dict() for a in self.actions],
+            "checkpoints": self.checkpoints,
+            "humanize_steps": self.humanize_steps,
+        }
+
+    def to_plan(self) -> TaskPlan:
+        """转换为 TaskPlan 以保持兼容性"""
+        return TaskPlan(
+            summary=self.summary,
+            steps=[f"{a.action}: {a.target}" for a in self.actions],
+            estimated_actions=len(self.actions),
+            raw_response=self.raw_response,
+        )
 
 
 @dataclass
@@ -74,12 +124,14 @@ class DecisionModel:
         )
         self.model_name = config.model_name
         self.conversation_history: list[dict] = []
+        self.current_task: str = ""
 
-        # 根据模式选择提示词
-        self.system_prompt = (
-            DECISION_SYSTEM_PROMPT_FAST if thinking_mode == ThinkingMode.FAST
-            else DECISION_SYSTEM_PROMPT
-        )
+        if thinking_mode == ThinkingMode.TURBO:
+            self.system_prompt = DECISION_SYSTEM_PROMPT_TURBO
+        elif thinking_mode == ThinkingMode.FAST:
+            self.system_prompt = DECISION_SYSTEM_PROMPT_FAST
+        else:
+            self.system_prompt = DECISION_SYSTEM_PROMPT
 
         logger.info(f"决策大模型初始化: {config.model_name}, 模式: {thinking_mode.value}")
 
@@ -213,6 +265,181 @@ class DecisionModel:
 
         logger.info(f"任务计划: {plan.summary}, 预计 {plan.estimated_actions} 步")
         return plan
+
+    def analyze_task_turbo(
+        self,
+        task: str,
+        on_thinking: Optional[Callable[[str], None]] = None,
+        on_answer: Optional[Callable[[str], None]] = None,
+    ) -> ActionSequence:
+        """
+        TURBO模式：分析任务并生成完整操作序列
+
+        一次性生成所有操作步骤，视觉模型直接执行，只有异常时才重新调用。
+
+        Args:
+            task: 用户任务描述
+            on_thinking: 思考过程回调
+            on_answer: 答案输出回调
+
+        Returns:
+            ActionSequence: 操作序列
+        """
+        logger.info(f"[TURBO] 分析任务: {task[:50]}...")
+        self.current_task = task
+
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": f"任务: {task}\n\n请生成完整的操作序列。"}
+        ]
+
+        response = self._stream_completion(messages, on_thinking, on_answer)
+
+        try:
+            data = self._extract_json(response)
+
+            if data.get("type") == "action_sequence":
+                actions = []
+                for a in data.get("actions", []):
+                    actions.append(ActionStep(
+                        action=a.get("action", "tap"),
+                        target=a.get("target", ""),
+                        content=a.get("content"),
+                        need_generate=a.get("need_generate", False),
+                        direction=a.get("direction"),
+                    ))
+
+                sequence = ActionSequence(
+                    summary=data.get("summary", task),
+                    actions=actions,
+                    checkpoints=data.get("checkpoints", []),
+                    humanize_steps=data.get("humanize_steps", []),
+                    raw_response=response,
+                )
+            else:
+                sequence = ActionSequence(
+                    summary=task,
+                    actions=[ActionStep(action="tap", target="未知")],
+                    raw_response=response,
+                )
+        except Exception as e:
+            logger.warning(f"[TURBO] 解析操作序列失败: {e}")
+            sequence = ActionSequence(
+                summary=task,
+                actions=[ActionStep(action="tap", target="未知")],
+                raw_response=response,
+            )
+
+        self.conversation_history = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": f"任务: {task}"},
+            {"role": "assistant", "content": response},
+        ]
+
+        logger.info(f"[TURBO] 生成 {len(sequence.actions)} 个操作步骤")
+        return sequence
+
+    def replan(
+        self,
+        current_state: str,
+        executed_actions: list[str],
+        error_info: str,
+        on_thinking: Optional[Callable[[str], None]] = None,
+        on_answer: Optional[Callable[[str], None]] = None,
+    ) -> ActionSequence:
+        """
+        TURBO模式：遇到问题时重新规划
+
+        Args:
+            current_state: 当前屏幕状态描述
+            executed_actions: 已执行的操作列表
+            error_info: 错误信息
+            on_thinking: 思考过程回调
+            on_answer: 答案输出回调
+
+        Returns:
+            ActionSequence: 新的操作序列
+        """
+        logger.info(f"[TURBO] 重新规划，错误: {error_info[:50]}...")
+
+        prompt = DECISION_REPLAN_PROMPT.format(
+            current_state=current_state,
+            executed_actions="\n".join([f"- {a}" for a in executed_actions]),
+            error_info=error_info,
+        )
+
+        self.conversation_history.append({"role": "user", "content": prompt})
+        response = self._stream_completion(self.conversation_history, on_thinking, on_answer)
+        self.conversation_history.append({"role": "assistant", "content": response})
+
+        try:
+            data = self._extract_json(response)
+            actions = []
+            for a in data.get("actions", []):
+                actions.append(ActionStep(
+                    action=a.get("action", "tap"),
+                    target=a.get("target", ""),
+                    content=a.get("content"),
+                    need_generate=a.get("need_generate", False),
+                    direction=a.get("direction"),
+                ))
+
+            return ActionSequence(
+                summary=data.get("summary", "重新规划"),
+                actions=actions,
+                checkpoints=data.get("checkpoints", []),
+                humanize_steps=data.get("humanize_steps", []),
+                raw_response=response,
+            )
+        except Exception as e:
+            logger.warning(f"[TURBO] 解析重规划失败: {e}")
+            return ActionSequence(
+                summary="重新规划失败",
+                actions=[],
+                raw_response=response,
+            )
+
+    def generate_humanize_content(
+        self,
+        task_context: str,
+        current_scene: str,
+        content_type: str,
+        on_thinking: Optional[Callable[[str], None]] = None,
+        on_answer: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """
+        生成人性化内容（回复、评论、帖子等）
+
+        Args:
+            task_context: 任务背景
+            current_scene: 当前场景描述
+            content_type: 内容类型
+            on_thinking: 思考过程回调
+            on_answer: 答案输出回调
+
+        Returns:
+            str: 生成的内容
+        """
+        logger.info(f"[TURBO] 生成人性化内容: {content_type}")
+
+        prompt = DECISION_HUMANIZE_PROMPT.format(
+            task_context=task_context,
+            current_scene=current_scene,
+            content_type=content_type,
+        )
+
+        messages = [
+            {"role": "system", "content": "你是一个社交媒体内容创作专家，擅长生成自然、真实、有个性的内容。"},
+            {"role": "user", "content": prompt},
+        ]
+
+        content = self._stream_completion(messages, on_thinking, on_answer)
+        content = content.strip()
+        if content.startswith('"') and content.endswith('"'):
+            content = content[1:-1]
+
+        logger.info(f"[TURBO] 生成内容长度: {len(content)}")
+        return content
 
     def make_decision(
         self,
@@ -350,6 +577,11 @@ class DecisionModel:
 
     def _extract_json(self, text: str) -> dict:
         """从文本中提取JSON"""
+        import re
+
+        # 清理文本
+        text = text.strip()
+
         # 尝试直接解析
         try:
             return json.loads(text)
@@ -357,7 +589,6 @@ class DecisionModel:
             pass
 
         # 尝试提取 ```json ... ``` 代码块
-        import re
         json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
         if json_match:
             try:
@@ -365,8 +596,37 @@ class DecisionModel:
             except json.JSONDecodeError:
                 pass
 
-        # 尝试提取 { ... }
-        brace_match = re.search(r'\{.*\}', text, re.DOTALL)
+        # 尝试提取 ``` ... ``` 代码块（不带json标记）
+        code_match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
+        if code_match:
+            try:
+                return json.loads(code_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # 尝试找到第一个 { 并匹配到对应的 }
+        start_idx = text.find('{')
+        if start_idx != -1:
+            brace_count = 0
+            end_idx = start_idx
+            for i in range(start_idx, len(text)):
+                if text[i] == '{':
+                    brace_count += 1
+                elif text[i] == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_idx = i + 1
+                        break
+
+            if end_idx > start_idx:
+                json_str = text[start_idx:end_idx]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    pass
+
+        # 最后尝试用非贪婪正则提取
+        brace_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text)
         if brace_match:
             try:
                 return json.loads(brace_match.group(0))

@@ -12,8 +12,9 @@ from pydantic import BaseModel
 
 class ThinkingMode(str, Enum):
     """思考模式"""
-    FAST = "fast"  # 快速模式 - 简洁高效
-    DEEP = "deep"  # 深度模式 - 全面分析
+    FAST = "fast"    # 快速模式 - 简洁高效
+    DEEP = "deep"    # 深度模式 - 全面分析
+    TURBO = "turbo"  # 极速模式 - 批量操作，仅异常时调用决策模型
 
 
 class DecisionModelConfig(BaseModel):
@@ -216,6 +217,18 @@ DECISION_SYSTEM_PROMPT = """你是一个智能手机操作决策专家。你的�
 3. 如果屏幕描述不清楚，可以要求重新识别
 4. 遇到需要登录、验证码等情况，请求用户介入
 5. 保持决策的连续性，记住之前的操作和结果
+
+## 重要：循环任务处理
+当用户任务包含数量要求时（如"10次"、"10个"、"重复N次"等），你必须：
+1. **跟踪进度**：记住当前完成了多少次，还剩多少次
+2. **持续执行**：完成一个子任务后，立即开始下一个，不要返回finished
+3. **只有全部完成才结束**：只有当所有要求的次数都完成后，才返回 `"type": "finish"`
+4. **在reasoning中报告进度**：例如"已完成3/10，继续执行第4个"
+
+示例：如果用户要求"浏览10个帖子并评论"：
+- 完成第1个帖子后：继续执行，不要finished
+- 完成第5个帖子后：继续执行，不要finished
+- 完成第10个帖子后：返回 `"type": "finish"`
 """
 
 DECISION_SYSTEM_PROMPT_FAST = """你是手机操作决策专家。根据屏幕描述快速做出操作决策。
@@ -235,6 +248,13 @@ DECISION_SYSTEM_PROMPT_FAST = """你是手机操作决策专家。根据屏幕�
 - 每次一个决策
 - 简洁明确
 - 快速响应
+
+## 重要：循环任务
+当任务包含数量要求（如"10次"、"10个"）时：
+1. 跟踪进度：记住完成了多少次
+2. 持续执行：完成一个后继续下一个，不要返回finished
+3. 只有全部完成才返回 `"type":"finish"`
+4. 在reasoning中报告进度（如"已完成3/10"）
 """
 
 DECISION_ERROR_CONTEXT_TEMPLATE = """
@@ -257,3 +277,70 @@ VISION_DESCRIBE_PROMPT = """请详细描述当前屏幕内容，包括：
 """
 
 VISION_DESCRIBE_PROMPT_FAST = """简述屏幕内容：应用名、主要按钮、输入框、弹窗状态。"""
+
+DECISION_SYSTEM_PROMPT_TURBO = """你是手机操作专家。一次性生成完整的操作序列，让执行模型直接执行。
+
+## 响应格式（JSON）
+
+任务分析时返回操作序列:
+```json
+{
+    "type": "action_sequence",
+    "summary": "任务简述",
+    "actions": [
+        {"action": "launch", "target": "应用名"},
+        {"action": "tap", "target": "搜索框"},
+        {"action": "type", "content": "搜索内容", "need_generate": false},
+        {"action": "tap", "target": "搜索按钮"},
+        {"action": "tap", "target": "第一个结果"}
+    ],
+    "checkpoints": ["应用已打开", "搜索结果出现"],
+    "humanize_steps": [2]
+}
+```
+
+## 字段说明
+- actions: 操作序列，按顺序执行
+- action类型: tap|type|swipe|scroll|back|home|launch|wait
+- need_generate: type操作是否需要决策模型生成内容（人性化回复等）
+- humanize_steps: 需要人性化处理的步骤索引（0起始），这些步骤会调用决策模型生成内容
+- checkpoints: 关键检查点，用于验证执行进度
+
+## 规则
+1. 一次性给出所有操作步骤，执行模型会按顺序执行
+2. type操作如果是固定内容（搜索词、用户名等），直接写content，need_generate=false
+3. type操作如果需要人性化内容（回复消息、发帖等），设置need_generate=true，执行时会调用决策模型
+4. 只有遇到异常才会重新调用你，否则按序列执行
+5. 尽量精确描述target，便于视觉模型定位
+"""
+
+DECISION_REPLAN_PROMPT = """执行过程中遇到问题，请重新分析并给出后续操作。
+
+## 当前状态
+{current_state}
+
+## 已执行的操作
+{executed_actions}
+
+## 遇到的问题
+{error_info}
+
+请分析问题并给出新的操作序列。如果需要人性化回复，请直接生成内容。
+"""
+
+DECISION_HUMANIZE_PROMPT = """需要生成人性化内容。
+
+## 任务背景
+{task_context}
+
+## 当前场景
+{current_scene}
+
+## 需要生成的内容类型
+{content_type}
+
+请直接生成内容，不要JSON格式，直接返回文本内容。要求：
+1. 自然、真实、有个性
+2. 符合场景和语境
+3. 适当的长度
+"""
