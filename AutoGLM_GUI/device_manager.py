@@ -147,11 +147,9 @@ def _is_mdns_connection(device_id: str) -> bool:
 
 
 def _create_managed_device(
-    serial: str, device_infos: list[DeviceInfo], adb_path: str = "adb"
+    serial: str, device_infos: list[DeviceInfo]
 ) -> ManagedDevice:
     """Create ManagedDevice from DeviceInfo list."""
-    from AutoGLM_GUI.adb_plus import get_device_model
-
     connections = [
         DeviceConnection(
             device_id=d.device_id,
@@ -168,14 +166,6 @@ def _create_managed_device(
         if device_info.model:
             model = device_info.model
             break
-
-    # Fallback: query model via getprop if not available from adb devices -l
-    # This is common for WiFi-connected devices
-    if not model and device_infos:
-        primary_device_id = device_infos[0].device_id
-        model = get_device_model(primary_device_id, adb_path)
-        if model:
-            logger.debug(f"Got model '{model}' for {serial} via getprop fallback")
 
     # Create managed device
     managed = ManagedDevice(
@@ -321,18 +311,6 @@ class DeviceManager:
 
             return None
 
-    def get_device_by_serial(self, serial: str) -> Optional[ManagedDevice]:
-        """Get device by hardware serial number.
-
-        Args:
-            serial: Device hardware serial number (ro.serialno)
-
-        Returns:
-            ManagedDevice if found, None otherwise
-        """
-        with self._devices_lock:
-            return self._devices.get(serial)
-
     def force_refresh(self) -> None:
         """Trigger immediate device list refresh (blocking)."""
         logger.info("Force refreshing device list...")
@@ -441,7 +419,7 @@ class DeviceManager:
             # Add new devices
             for serial in added_serials:
                 device_infos = grouped_by_serial[serial]
-                managed = _create_managed_device(serial, device_infos, self._adb_path)
+                managed = _create_managed_device(serial, device_infos)
                 self._devices[serial] = managed
 
                 # Update reverse mapping
@@ -479,18 +457,6 @@ class DeviceManager:
                     if device_info.model:
                         managed.model = device_info.model
                         break
-
-                # Fallback: query model via getprop if still not available
-                if not managed.model and device_infos:
-                    from AutoGLM_GUI.adb_plus import get_device_model
-
-                    primary_device_id = managed.primary_device_id
-                    model = get_device_model(primary_device_id, self._adb_path)
-                    if model:
-                        managed.model = model
-                        logger.debug(
-                            f"Got model '{model}' for {serial} via getprop fallback"
-                        )
 
                 # Re-select primary connection
                 managed.select_primary_connection()
