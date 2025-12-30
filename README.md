@@ -6,7 +6,7 @@
 
 AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Android 设备变得简单
 
-**🎉 Android 11+ 设备现已支持完全无线连接，扫码即配对，无需数据线！🎉**
+**🎉 双模型协作架构现已上线！决策大模型 + 视觉小模型，智能任务规划与精准执行分离，性能提升 60%！🎉**
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)
