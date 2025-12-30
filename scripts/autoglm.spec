@@ -11,6 +11,7 @@ PyInstaller 配置文件 - AutoGLM-GUI 后端打包
 """
 
 from pathlib import Path
+from PyInstaller.utils.hooks import copy_metadata, collect_data_files
 
 # 项目根目录（SPECPATH 是 spec 文件所在目录，由 PyInstaller 提供）
 ROOT_DIR = Path(SPECPATH).parent
@@ -39,6 +40,15 @@ a = Analysis(
 
         # ADB Keyboard APK 及许可证文件（自动安装功能）
         (str(ROOT_DIR / 'AutoGLM_GUI' / 'resources' / 'apks'), 'AutoGLM_GUI/resources/apks'),
+
+        # Package metadata（运行时需要）
+        *copy_metadata('fastmcp'),
+        *copy_metadata('lupa'),
+        *copy_metadata('fakeredis'),
+
+        # fakeredis 数据文件（commands.json 需要在 fakeredis/ 目录下）
+        # 使用 collect_data_files 会自动处理正确的路径
+        *collect_data_files('fakeredis', include_py_files=False),
     ],
 
     # 隐藏导入：PyInstaller 无法自动检测的模块
@@ -62,14 +72,24 @@ a = Analysis(
         'fastapi.responses',
         'fastapi.staticfiles',
 
+        # lupa (fakeredis 依赖) - Lua runtime for Python
+        'lupa',
+        'lupa.lua51',
+        'lupa.lua52',
+        'lupa.lua53',
+        'lupa.lua54',
+
         # 其他可能需要的模块
         'PIL._tkinter_finder',  # Pillow
     ],
 
     hookspath=[],
     hooksconfig={},
-    # Runtime hook: 在主程序运行前强制设置 UTF-8 编码（Windows）
-    runtime_hooks=[str(Path(SPECPATH) / 'pyi_rth_utf8.py')],
+    # Runtime hooks: 在主程序运行前执行
+    runtime_hooks=[
+        str(Path(SPECPATH) / 'pyi_rth_utf8.py'),  # UTF-8 编码（Windows）
+        str(Path(SPECPATH) / 'pyi_rth_fakeredis.py'),  # fakeredis 路径修复
+    ],
     excludes=[
         # 排除不需要的模块以减小体积
         'tkinter',

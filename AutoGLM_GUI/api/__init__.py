@@ -97,9 +97,9 @@ def create_app() -> FastAPI:
     app.include_router(workflows.router)
     app.include_router(dual_model.router)
 
-    # Mount MCP server at root (mcp_app already has /mcp path prefix)
-    app.mount("/", mcp_app)
-
+    # Mount static files BEFORE MCP to ensure they have priority
+    # This is critical: FastAPI processes mounts in order, so static files
+    # must be mounted before the catch-all MCP mount
     static_dir = _get_static_dir()
     if static_dir is not None and static_dir.exists():
         assets_dir = static_dir / "assets"
@@ -113,10 +113,14 @@ def create_app() -> FastAPI:
                 return FileResponse(file_path)
             return FileResponse(static_dir / "index.html")
 
-        # Add catch-all route AFTER all mounts to ensure lower priority
+        # Add catch-all route for SPA (handles all non-API routes)
         app.add_api_route(
             "/{full_path:path}", serve_spa, methods=["GET"], include_in_schema=False
         )
+
+    # Mount MCP server at root (mcp_app already has /mcp path prefix)
+    # This must be AFTER static files to avoid intercepting them
+    app.mount("/", mcp_app)
 
     return app
 

@@ -234,6 +234,16 @@ class ElectronBuilder:
         """打包 Python 后端"""
         print_step("打包 Python 后端", 7, 5)
 
+        # 清理旧的构建输出
+        pyinstaller_dist = self.scripts_dir / "dist" / "autoglm-gui"
+        pyinstaller_build = self.scripts_dir / "build" / "autoglm"
+        if pyinstaller_dist.exists():
+            shutil.rmtree(pyinstaller_dist)
+            print_success("清理旧的 PyInstaller dist 输出")
+        if pyinstaller_build.exists():
+            shutil.rmtree(pyinstaller_build)
+            print_success("清理旧的 PyInstaller build 输出")
+
         # 运行 PyInstaller
         print("\n运行 PyInstaller...")
         if not run_command(["pyinstaller", "autoglm.spec"], cwd=self.scripts_dir):
