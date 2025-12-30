@@ -7,7 +7,6 @@ import {
   listDevices,
   getConfig,
   saveConfig,
-  setDeviceAlias,
   type Device,
   type ConfigSaveRequest,
 } from '../api';
@@ -662,7 +661,7 @@ function ChatComponent() {
               <DevicePanel
                 deviceId={device.id}
                 deviceSerial={device.serial}
-                deviceName={device.alias || device.model}
+                deviceName={device.model}
                 config={config}
                 isVisible={device.id === currentDeviceId}
                 isConfigured={!!config?.base_url}
@@ -672,10 +671,6 @@ function ChatComponent() {
                     ...prev,
                     [device.serial]: mode,
                   }));
-                }}
-                onRename={async (alias: string) => {
-                  await setDeviceAlias(device.serial, alias);
-                  await loadDevices();
                 }}
               />
             </div>

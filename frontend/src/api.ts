@@ -16,7 +16,6 @@ export interface Device {
   connection_type: string;
   state: string;
   is_available_only: boolean;
-  alias?: string | null; // 设备自定义别名
   agent: AgentStatus | null; // Agent runtime status (null if not initialized)
 }
 
@@ -958,44 +957,6 @@ export async function resetDualModel(deviceId: string): Promise<{
   message: string;
 }> {
   const res = await axios.post('/api/dual/reset', { device_id: deviceId });
-  return res.data;
-}
-
-// ==================== 设备别名管理 ====================
-
-export async function getDeviceAlias(
-  serial: string
-): Promise<{ serial: string; alias: string | null }> {
-  const res = await axios.get(
-    `/api/devices/${encodeURIComponent(serial)}/alias`
-  );
-  return res.data;
-}
-
-export async function setDeviceAlias(
-  serial: string,
-  alias: string
-): Promise<{
-  success: boolean;
-  serial: string;
-  alias: string | null;
-  message: string;
-}> {
-  const res = await axios.put(
-    `/api/devices/${encodeURIComponent(serial)}/alias`,
-    {
-      alias,
-    }
-  );
-  return res.data;
-}
-
-export async function deleteDeviceAlias(
-  serial: string
-): Promise<{ success: boolean; serial: string; message: string }> {
-  const res = await axios.delete(
-    `/api/devices/${encodeURIComponent(serial)}/alias`
-  );
   return res.data;
 }
 

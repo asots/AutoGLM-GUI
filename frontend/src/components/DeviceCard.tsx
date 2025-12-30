@@ -7,22 +7,12 @@ import {
   Loader2,
   XCircle,
   Clock,
-  Pencil,
   Trash2,
   Unplug,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from './ConfirmDialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import { useTranslation } from '../lib/i18n-context';
 import type { AgentStatus } from '../api';
 
@@ -32,14 +22,12 @@ interface DeviceCardProps {
   model: string;
   status: string;
   connectionType?: string;
-  alias?: string | null;
   agent?: AgentStatus | null;
   isActive: boolean;
   onClick: () => void;
   onConnectWifi?: () => Promise<void>;
   onDisconnectWifi?: () => Promise<void>;
   onDisconnectAll?: () => Promise<void>;
-  onRename?: (alias: string) => Promise<void>;
   onDelete?: () => Promise<void>;
 }
 
@@ -49,14 +37,12 @@ export function DeviceCard({
   model,
   status,
   connectionType,
-  alias,
   agent,
   isActive,
   onClick,
   onConnectWifi,
   onDisconnectWifi,
   onDisconnectAll,
-  onRename,
   onDelete,
 }: DeviceCardProps) {
   const t = useTranslation();
@@ -69,10 +55,8 @@ export function DeviceCard({
   const [showDisconnectAllConfirm, setShowDisconnectAllConfirm] =
     useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showRenameDialog, setShowRenameDialog] = useState(false);
-  const [editValue, setEditValue] = useState(alias || '');
 
-  const displayName = alias || model || t.deviceCard.unknownDevice;
+  const displayName = model || t.deviceCard.unknownDevice;
 
   const handleWifiClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -96,30 +80,6 @@ export function DeviceCard({
     e.stopPropagation();
     if (loading || !onDelete) return;
     setShowDeleteConfirm(true);
-  };
-
-  const handleEditClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditValue(alias || '');
-    setShowRenameDialog(true);
-  };
-
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!onRename) return;
-    setEditValue(alias || '');
-    setShowRenameDialog(true);
-  };
-
-  const handleSaveRename = async () => {
-    if (!onRename) return;
-    setLoading(true);
-    try {
-      await onRename(editValue);
-      setShowRenameDialog(false);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleConfirmWifi = async () => {
@@ -217,26 +177,14 @@ export function DeviceCard({
                 }`}
               />
               <span
-                onDoubleClick={handleDoubleClick}
-                className={`font-semibold text-sm truncate cursor-pointer ${
+                className={`font-semibold text-sm truncate ${
                   isActive
                     ? 'text-slate-900 dark:text-slate-100'
                     : 'text-slate-700 dark:text-slate-300'
-                } ${onRename ? 'hover:text-[#1d9bf0] dark:hover:text-[#1d9bf0]' : ''}`}
-                title={onRename ? t.deviceCard.doubleClickToRename : undefined}
+                }`}
               >
                 {displayName}
               </span>
-              {onRename && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleEditClick}
-                  className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-[#1d9bf0]"
-                >
-                  <Pencil className="w-3 h-3" />
-                </Button>
-              )}
             </div>
             <span
               className={`text-xs font-mono truncate ${
@@ -245,135 +193,142 @@ export function DeviceCard({
                   : 'text-slate-400 dark:text-slate-500'
               }`}
             >
-              {alias ? model : id}
+              {model || id}
             </span>
+
+            {/* Agent status */}
+            {agent && (
+              <div className="flex items-center gap-1.5 mt-1">
+                {agent.state === 'busy' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-[#1d9bf0]/10 text-[#1d9bf0] hover:bg-[#1d9bf0]/20"
+                  >
+                    <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" />
+                    {t.deviceCard.agentBusy}
+                  </Badge>
+                )}
+                {agent.state === 'idle' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                  >
+                    <CheckCircle2 className="w-2.5 h-2.5 mr-1" />
+                    {t.deviceCard.agentIdle}
+                  </Badge>
+                )}
+                {agent.state === 'error' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                  >
+                    <XCircle className="w-2.5 h-2.5 mr-1" />
+                    {t.deviceCard.agentError}
+                  </Badge>
+                )}
+                {agent.state === 'initializing' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                  >
+                    <Clock className="w-2.5 h-2.5 mr-1" />
+                    {t.deviceCard.agentInitializing}
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Connection type badge */}
+          {isUsb && (
+            <Badge
+              variant="outline"
+              className="flex-shrink-0 text-xs border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-400"
+            >
+              USB
+            </Badge>
+          )}
+          {isRemote && (
+            <Badge
+              variant="outline"
+              className="flex-shrink-0 text-xs border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-400"
+            >
+              <WifiOff className="w-2.5 h-2.5 mr-1" />
+              Remote
+            </Badge>
+          )}
 
           {/* Action buttons */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Action buttons - only show on hover */}
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {isUsb && onConnectWifi && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleWifiClick}
-                  disabled={loading}
-                  className={`h-7 w-7 rounded-full ${
-                    isActive
-                      ? 'bg-[#1d9bf0]/10 text-[#1d9bf0] hover:bg-[#1d9bf0]/20'
-                      : 'text-slate-400 dark:text-slate-500 hover:text-[#1d9bf0] dark:hover:text-[#1d9bf0] hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  title={t.deviceCard.connectViaWifi}
-                >
-                  {loading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Wifi className="w-3.5 h-3.5" />
-                  )}
-                </Button>
-              )}
-
-              {isRemote && onDisconnectWifi && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDisconnectClick}
-                  disabled={loading}
-                  className={`h-7 w-7 rounded-full ${
-                    isActive
-                      ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-                      : 'text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  title={t.deviceCard.disconnectWifi}
-                >
-                  {loading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <WifiOff className="w-3.5 h-3.5" />
-                  )}
-                </Button>
-              )}
-
-              {/* Disconnect All button */}
-              {onDisconnectAll && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDisconnectAllClick}
-                  disabled={loading}
-                  className="h-7 w-7 rounded-full text-slate-400 dark:text-slate-500 hover:text-orange-500 dark:hover:text-orange-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  title={t.deviceCard.disconnectAll}
-                >
-                  {loading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Unplug className="w-3.5 h-3.5" />
-                  )}
-                </Button>
-              )}
-
-              {/* Delete button */}
-              {onDelete && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleDeleteClick}
-                  disabled={loading}
-                  className="h-7 w-7 rounded-full text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  title={t.deviceCard.deleteDevice}
-                >
-                  {loading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {/* Agent status badge - always visible but compact */}
-            {agent ? (
-              <Badge
-                variant={
-                  agent.state === 'idle'
-                    ? 'success'
-                    : agent.state === 'busy'
-                      ? 'warning'
-                      : agent.state === 'error'
-                        ? 'destructive'
-                        : 'secondary'
-                }
-                className={`text-[10px] px-1.5 py-0 h-5 ${
-                  isActive
-                    ? agent.state === 'idle'
-                      ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                      : agent.state === 'busy'
-                        ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
-                        : agent.state === 'error'
-                          ? 'bg-red-500/10 text-red-600 dark:text-red-400'
-                          : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'
-                    : ''
-                }`}
+            {onConnectWifi && isUsb && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleWifiClick}
+                disabled={loading}
+                className="h-7 w-7 text-slate-400 hover:text-[#1d9bf0]"
+                title={t.deviceCard.connectViaWifi}
               >
-                {agent.state === 'idle' && (
-                  <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" />
+                {loading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Wifi className="w-3.5 h-3.5" />
                 )}
-                {agent.state === 'busy' && (
-                  <Loader2 className="w-2.5 h-2.5 mr-0.5 animate-spin" />
+              </Button>
+            )}
+            {onDisconnectWifi && isRemote && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDisconnectClick}
+                disabled={loading}
+                className="h-7 w-7 text-slate-400 hover:text-orange-500"
+                title={t.deviceCard.disconnectWifi}
+              >
+                {loading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <WifiOff className="w-3.5 h-3.5" />
                 )}
-                {agent.state === 'error' && (
-                  <XCircle className="w-2.5 h-2.5 mr-0.5" />
+              </Button>
+            )}
+            {onDisconnectAll && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDisconnectAllClick}
+                disabled={loading}
+                className="h-7 w-7 text-slate-400 hover:text-orange-500"
+                title={t.deviceCard.disconnectAll}
+              >
+                {loading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Unplug className="w-3.5 h-3.5" />
                 )}
-                {agent.state === 'initializing' && (
-                  <Clock className="w-2.5 h-2.5 mr-0.5" />
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleDeleteClick}
+                disabled={loading}
+                className="h-7 w-7 text-slate-400 hover:text-red-500"
+                title={t.deviceCard.deleteDevice}
+              >
+                {loading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
                 )}
-              </Badge>
-            ) : null}
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
+      {/* WiFi Connection Confirmation Dialog */}
       <ConfirmDialog
         isOpen={showWifiConfirm}
         title={t.deviceCard.connectWifiTitle}
@@ -382,6 +337,7 @@ export function DeviceCard({
         onCancel={() => setShowWifiConfirm(false)}
       />
 
+      {/* WiFi Disconnect Confirmation Dialog */}
       <ConfirmDialog
         isOpen={showDisconnectConfirm}
         title={t.deviceCard.disconnectWifiTitle}
@@ -390,14 +346,7 @@ export function DeviceCard({
         onCancel={() => setShowDisconnectConfirm(false)}
       />
 
-      <ConfirmDialog
-        isOpen={showDeleteConfirm}
-        title={t.deviceCard.deleteDeviceTitle}
-        content={t.deviceCard.deleteDeviceContent}
-        onConfirm={handleConfirmDelete}
-        onCancel={() => setShowDeleteConfirm(false)}
-      />
-
+      {/* Disconnect All Confirmation Dialog */}
       <ConfirmDialog
         isOpen={showDisconnectAllConfirm}
         title={t.deviceCard.disconnectAllTitle}
@@ -406,48 +355,14 @@ export function DeviceCard({
         onCancel={() => setShowDisconnectAllConfirm(false)}
       />
 
-      {/* Rename Dialog */}
-      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>{t.deviceCard.renameDeviceTitle}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="device-alias">{t.deviceCard.deviceAlias}</Label>
-              <Input
-                id="device-alias"
-                value={editValue}
-                onChange={e => setEditValue(e.target.value)}
-                placeholder={model || t.deviceCard.unknownDevice}
-                autoFocus
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    handleSaveRename();
-                  }
-                }}
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t.deviceCard.deviceAliasHint}
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowRenameDialog(false)}
-            >
-              {t.common.cancel}
-            </Button>
-            <Button onClick={handleSaveRename} disabled={loading}>
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : null}
-              {t.common.save}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Device Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title={t.deviceCard.deleteDeviceTitle}
+        content={t.deviceCard.deleteDeviceContent}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 }

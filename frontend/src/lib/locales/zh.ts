@@ -164,11 +164,7 @@ export const zh = {
     disconnectAllContent:
       '确定要断开此设备的所有连接吗？这将断开 USB 和 WiFi 连接。',
     deleteDeviceTitle: '删除设备',
-    deleteDeviceContent: '确定要删除此设备吗？这将断开连接并移除设备别名。',
-    renameDeviceTitle: '重命名设备',
-    deviceAlias: '设备别名',
-    deviceAliasHint: '留空将显示设备型号名称',
-    doubleClickToRename: '双击重命名',
+    deleteDeviceContent: '确定要删除此设备吗？这将断开连接。',
   },
   presetConfigs: {
     bigmodel: {

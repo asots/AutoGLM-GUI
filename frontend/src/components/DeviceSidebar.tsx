@@ -35,7 +35,6 @@ import {
   generateQRPairing,
   getQRPairingStatus,
   cancelQRPairing,
-  setDeviceAlias,
   deleteDevice,
   disconnectAllConnections,
 } from '../api';
@@ -539,7 +538,6 @@ export function DeviceSidebar({
                 model={device.model}
                 status={device.status}
                 connectionType={device.connection_type}
-                alias={device.alias}
                 agent={device.agent}
                 isActive={currentDeviceId === device.id}
                 onClick={() => onSelectDevice(device.id)}
@@ -551,10 +549,6 @@ export function DeviceSidebar({
                 }}
                 onDisconnectAll={async () => {
                   await disconnectAllConnections(device.serial);
-                  if (onRefreshDevices) await onRefreshDevices();
-                }}
-                onRename={async (alias: string) => {
-                  await setDeviceAlias(device.serial, alias);
                   if (onRefreshDevices) await onRefreshDevices();
                 }}
                 onDelete={async () => {

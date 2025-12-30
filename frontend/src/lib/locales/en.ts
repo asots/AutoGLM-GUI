@@ -168,11 +168,7 @@ export const en = {
       'Are you sure you want to disconnect all connections? This will disconnect both USB and WiFi.',
     deleteDeviceTitle: 'Delete Device',
     deleteDeviceContent:
-      'Are you sure you want to delete this device? This will disconnect and remove the device alias.',
-    renameDeviceTitle: 'Rename Device',
-    deviceAlias: 'Device Alias',
-    deviceAliasHint: 'Leave empty to show the device model name',
-    doubleClickToRename: 'Double-click to rename',
+      'Are you sure you want to delete this device? This will disconnect the device.',
   },
   presetConfigs: {
     bigmodel: {

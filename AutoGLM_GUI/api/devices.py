@@ -34,7 +34,7 @@ from AutoGLM_GUI.schemas import (
 def _build_device_response_with_agent(
     device: ManagedDevice, agent_manager: PhoneAgentManager
 ) -> dict:
-    """组合设备信息和 Agent 状态（API 层职责）。
+    """组合设备信息和 Agent 状态（API 层职责）.
 
     Args:
         device: ManagedDevice 实例
@@ -43,14 +43,8 @@ def _build_device_response_with_agent(
     Returns:
         dict: 完整的设备响应，匹配 DeviceResponse schema
     """
-    from AutoGLM_GUI.device_alias_manager import device_alias_manager
-
     # 获取纯设备信息
     response = device.to_dict()
-
-    # 添加设备别名
-    alias = device_alias_manager.get_alias(device.serial)
-    response["alias"] = alias
 
     # 通过 serial 查找 Agent（支持连接切换）
     agent_device_id = agent_manager.find_agent_by_serial(device.serial)
@@ -378,78 +372,6 @@ def cancel_qr_pairing(session_id: str) -> QRPairCancelResponse:
         )
 
 
-# ==================== 设备别名管理 ====================
-
-
-@router.get("/api/devices/{serial}/alias")
-def get_device_alias(serial: str) -> dict:
-    """获取设备别名.
-
-    Args:
-        serial: 设备序列号
-
-    Returns:
-        设备别名信息
-    """
-    from AutoGLM_GUI.device_alias_manager import device_alias_manager
-
-    alias = device_alias_manager.get_alias(serial)
-    return {
-        "serial": serial,
-        "alias": alias,
-    }
-
-
-@router.put("/api/devices/{serial}/alias")
-def set_device_alias(serial: str, data: dict) -> dict:
-    """设置设备别名.
-
-    Args:
-        serial: 设备序列号
-        data: 包含 alias 字段的请求体
-
-    Returns:
-        操作结果
-    """
-    from AutoGLM_GUI.device_alias_manager import device_alias_manager
-
-    alias = data.get("alias", "")
-    success = device_alias_manager.set_alias(serial, alias)
-
-    if success:
-        return {
-            "success": True,
-            "serial": serial,
-            "alias": alias if alias.strip() else None,
-            "message": "Alias updated" if alias.strip() else "Alias removed",
-        }
-    else:
-        return {
-            "success": False,
-            "message": "Failed to save alias",
-        }
-
-
-@router.delete("/api/devices/{serial}/alias")
-def delete_device_alias(serial: str) -> dict:
-    """删除设备别名.
-
-    Args:
-        serial: 设备序列号
-
-    Returns:
-        操作结果
-    """
-    from AutoGLM_GUI.device_alias_manager import device_alias_manager
-
-    success = device_alias_manager.delete_alias(serial)
-    return {
-        "success": success,
-        "serial": serial,
-        "message": "Alias deleted" if success else "Failed to delete alias",
-    }
-
-
 # ==================== 设备删除（断开并清理） ====================
 
 
@@ -465,7 +387,6 @@ def delete_device(serial: str) -> dict:
     """
     from AutoGLM_GUI.device_manager import DeviceManager
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
-    from AutoGLM_GUI.device_alias_manager import device_alias_manager
 
     device_manager = DeviceManager.get_instance()
     agent_manager = PhoneAgentManager.get_instance()
@@ -497,9 +418,6 @@ def delete_device(serial: str) -> dict:
             logger.info(f"Disconnected WiFi for device {serial}")
         except Exception as e:
             logger.warning(f"Failed to disconnect WiFi: {e}")
-
-    # 删除设备别名
-    device_alias_manager.delete_alias(serial)
 
     # 刷新设备列表
     device_manager.force_refresh()

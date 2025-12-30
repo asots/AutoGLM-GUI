@@ -19,7 +19,6 @@ import {
   Brain,
   Zap,
   Target,
-  Pencil,
 } from 'lucide-react';
 import { throttle } from 'lodash';
 import { ScrcpyPlayer } from './ScrcpyPlayer';
@@ -55,15 +54,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useTranslation } from '../lib/i18n-context';
 import {
@@ -109,7 +99,6 @@ interface DevicePanelProps {
   isConfigured: boolean;
   thinkingMode?: 'fast' | 'deep'; // Per-device thinking mode
   onThinkingModeChange?: (mode: 'fast' | 'deep') => void; // Callback to update thinking mode
-  onRename?: (alias: string) => Promise<void>; // Callback to rename device
 }
 
 export function DevicePanel({
@@ -120,7 +109,6 @@ export function DevicePanel({
   isConfigured,
   thinkingMode = 'fast',
   onThinkingModeChange,
-  onRename,
 }: DevicePanelProps) {
   const t = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -151,8 +139,6 @@ export function DevicePanel({
     reset: resetDualModelState,
   } = useDualModelState();
   const feedbackTimeoutRef = useRef<number | null>(null);
-  const [showRenameDialog, setShowRenameDialog] = useState(false);
-  const [renameValue, setRenameValue] = useState('');
 
   const showFeedback = (
     message: string,
@@ -1011,37 +997,9 @@ export function DevicePanel({
             </div>
             <div className="group">
               <div className="flex items-center gap-1">
-                <h2
-                  className={`font-bold text-slate-900 dark:text-slate-100 ${
-                    onRename
-                      ? 'cursor-pointer hover:text-[#1d9bf0] dark:hover:text-[#1d9bf0]'
-                      : ''
-                  }`}
-                  onDoubleClick={() => {
-                    if (onRename) {
-                      setRenameValue(deviceName);
-                      setShowRenameDialog(true);
-                    }
-                  }}
-                  title={
-                    onRename ? t.deviceCard.doubleClickToRename : undefined
-                  }
-                >
+                <h2 className="font-bold text-slate-900 dark:text-slate-100">
                   {deviceName}
                 </h2>
-                {onRename && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setRenameValue(deviceName);
-                      setShowRenameDialog(true);
-                    }}
-                    className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-[#1d9bf0]"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </Button>
-                )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 {deviceId}
@@ -1647,57 +1605,6 @@ export function DevicePanel({
           </div>
         )}
       </Card>
-
-      {/* Rename Dialog */}
-      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>{t.deviceCard.renameDeviceTitle}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="device-alias-panel">
-                {t.deviceCard.deviceAlias}
-              </Label>
-              <Input
-                id="device-alias-panel"
-                value={renameValue}
-                onChange={e => setRenameValue(e.target.value)}
-                placeholder={deviceName}
-                autoFocus
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && onRename) {
-                    onRename(renameValue).then(() =>
-                      setShowRenameDialog(false)
-                    );
-                  }
-                }}
-              />
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t.deviceCard.deviceAliasHint}
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowRenameDialog(false)}
-            >
-              {t.common.cancel}
-            </Button>
-            <Button
-              onClick={async () => {
-                if (onRename) {
-                  await onRename(renameValue);
-                  setShowRenameDialog(false);
-                }
-              }}
-            >
-              {t.common.save}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
