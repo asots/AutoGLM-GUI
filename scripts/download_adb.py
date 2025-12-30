@@ -3,9 +3,10 @@
 ADB 工具自动下载脚本
 
 用法:
-    uv run python scripts/download_adb.py          # 下载所有平台（Windows + macOS）
+    uv run python scripts/download_adb.py          # 下载所有平台（Windows + macOS），已存在则跳过
     uv run python scripts/download_adb.py windows  # 只下载 Windows
     uv run python scripts/download_adb.py darwin   # 只下载 macOS
+    uv run python scripts/download_adb.py --force  # 强制重新下载，即使已存在
 
 输出目录:
     resources/adb/windows/platform-tools/
@@ -49,7 +50,14 @@ def download_with_progress(url: str, output_path: Path) -> None:
         raise
 
 
-def download_adb(platform: str) -> None:
+def is_adb_installed(platform: str, output_dir: Path) -> bool:
+    """检查 ADB 是否已经安装"""
+    platform_tools_dir = output_dir / "platform-tools"
+    adb_exe = platform_tools_dir / ("adb.exe" if platform == "windows" else "adb")
+    return adb_exe.exists()
+
+
+def download_adb(platform: str, force: bool = False) -> None:
     """下载并解压 ADB 工具"""
     url = ADB_URLS.get(platform)
     if not url:
@@ -61,6 +69,15 @@ def download_adb(platform: str) -> None:
     root_dir = Path(__file__).parent.parent
     output_dir = root_dir / "resources" / "adb" / platform
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 检查是否已经下载
+    if not force and is_adb_installed(platform, output_dir):
+        print(f"\n{'=' * 60}")
+        print(f"ADB 工具 - {platform}")
+        print(f"{'=' * 60}")
+        print(f"  ✓ ADB 已存在，跳过下载")
+        print(f"  位置: {output_dir / 'platform-tools'}")
+        return
 
     zip_path = output_dir / "platform-tools.zip"
 
@@ -101,20 +118,35 @@ def download_adb(platform: str) -> None:
 
 def main():
     """主函数"""
-    # 默认下载所有平台
-    platforms = sys.argv[1:] if len(sys.argv) > 1 else ["windows", "darwin"]
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ADB 工具自动下载脚本")
+    parser.add_argument(
+        "platforms",
+        nargs="*",
+        default=["windows", "darwin"],
+        help="要下载的平台 (windows/darwin/linux)",
+    )
+    parser.add_argument(
+        "--force", "-f", action="store_true", help="强制重新下载，即使已存在"
+    )
+    args = parser.parse_args()
+
+    platforms = args.platforms
 
     print("\n" + "=" * 60)
     print("  AutoGLM-GUI - ADB 工具下载器")
     print("=" * 60)
     print(f"  目标平台: {', '.join(platforms)}")
+    if args.force:
+        print("  模式: 强制重新下载")
 
     success_count = 0
     failed_platforms = []
 
     for platform in platforms:
         try:
-            download_adb(platform)
+            download_adb(platform, force=args.force)
             success_count += 1
         except Exception as e:
             print(f"\n❌ {platform} 下载失败: {e}")
