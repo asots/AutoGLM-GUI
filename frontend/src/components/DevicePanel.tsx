@@ -65,6 +65,11 @@ import {
 } from '../utils/history';
 import type { HistoryItem } from '../types/history';
 import { HistoryItemCard } from './HistoryItemCard';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface Message {
   id: string;
@@ -1092,53 +1097,100 @@ export function DevicePanel({
             )}
 
             {/* Dual Model Toggle */}
-            <Button
-              variant={dualModelEnabled ? 'default' : 'ghost'}
-              size="icon"
-              onClick={handleToggleDualModel}
-              className={`h-8 w-8 rounded-full ${
-                dualModelEnabled
-                  ? 'bg-purple-500 hover:bg-purple-600 text-white'
-                  : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-              }`}
-              title={
-                dualModelEnabled
-                  ? t.devicePanel.disableDualModel
-                  : t.devicePanel.enableDualModel
-              }
-            >
-              <Brain className="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={dualModelEnabled ? 'default' : 'ghost'}
+                  size="icon"
+                  onClick={handleToggleDualModel}
+                  className={`h-8 w-8 rounded-full ${
+                    dualModelEnabled
+                      ? 'bg-purple-500 hover:bg-purple-600 text-white'
+                      : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                  }`}
+                >
+                  <Brain className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={8} className="max-w-xs">
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    {dualModelEnabled
+                      ? t.devicePanel.tooltips.disableDualModel
+                      : t.devicePanel.tooltips.enableDualModel}
+                  </p>
+                  <p className="text-xs opacity-80">
+                    {dualModelEnabled
+                      ? t.devicePanel.tooltips.disableDualModelDesc
+                      : t.devicePanel.tooltips.enableDualModelDesc}
+                  </p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
 
             {/* Thinking Mode Toggle - visible when dual model is enabled */}
             {dualModelEnabled && onThinkingModeChange && (
               <>
-                <Button
-                  variant={thinkingMode === 'fast' ? 'default' : 'ghost'}
-                  size="icon"
-                  onClick={() => onThinkingModeChange('fast')}
-                  className={`h-8 w-8 rounded-full ${
-                    thinkingMode === 'fast'
-                      ? 'bg-green-500 hover:bg-green-600 text-white'
-                      : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                  }`}
-                  title={t.devicePanel.fastMode}
-                >
-                  <Zap className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={thinkingMode === 'deep' ? 'default' : 'ghost'}
-                  size="icon"
-                  onClick={() => onThinkingModeChange('deep')}
-                  className={`h-8 w-8 rounded-full ${
-                    thinkingMode === 'deep'
-                      ? 'bg-blue-500 hover:bg-blue-600 text-white'
-                      : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-                  }`}
-                  title={t.devicePanel.deepMode}
-                >
-                  <Target className="h-4 w-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={thinkingMode === 'fast' ? 'default' : 'ghost'}
+                      size="icon"
+                      onClick={() => onThinkingModeChange('fast')}
+                      className={`h-8 w-8 rounded-full ${
+                        thinkingMode === 'fast'
+                          ? 'bg-green-500 hover:bg-green-600 text-white'
+                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      <Zap className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={8}
+                    className="max-w-xs"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium">
+                        {t.devicePanel.tooltips.fastMode}
+                      </p>
+                      <p className="text-xs opacity-80">
+                        {t.devicePanel.tooltips.fastModeDesc}
+                      </p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={thinkingMode === 'deep' ? 'default' : 'ghost'}
+                      size="icon"
+                      onClick={() => onThinkingModeChange('deep')}
+                      className={`h-8 w-8 rounded-full ${
+                        thinkingMode === 'deep'
+                          ? 'bg-blue-500 hover:bg-blue-600 text-white'
+                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      <Target className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={8}
+                    className="max-w-xs"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium">
+                        {t.devicePanel.tooltips.deepMode}
+                      </p>
+                      <p className="text-xs opacity-80">
+                        {t.devicePanel.tooltips.deepModeDesc}
+                      </p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
               </>
             )}
 
@@ -1343,58 +1395,75 @@ export function DevicePanel({
               rows={1}
             />
             {/* Workflow Quick Run Button */}
-            <Popover
-              open={showWorkflowPopover}
-              onOpenChange={setShowWorkflowPopover}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 flex-shrink-0"
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Popover
+                  open={showWorkflowPopover}
+                  onOpenChange={setShowWorkflowPopover}
                 >
-                  <ListChecks className="w-4 h-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-72 p-3">
-                <div className="space-y-2">
-                  <h4 className="font-medium text-sm">
-                    {t.workflows.selectWorkflow}
-                  </h4>
-                  {workflows.length === 0 ? (
-                    <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
-                      <p>{t.workflows.empty}</p>
-                      <p>
-                        前往{' '}
-                        <a href="/workflows" className="text-primary underline">
-                          工作流
-                        </a>{' '}
-                        页面创建。
-                      </p>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 flex-shrink-0"
+                    >
+                      <ListChecks className="w-4 h-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-72 p-3">
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm">
+                        {t.workflows.selectWorkflow}
+                      </h4>
+                      {workflows.length === 0 ? (
+                        <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
+                          <p>{t.workflows.empty}</p>
+                          <p>
+                            前往{' '}
+                            <a
+                              href="/workflows"
+                              className="text-primary underline"
+                            >
+                              工作流
+                            </a>{' '}
+                            页面创建。
+                          </p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-64">
+                          <div className="space-y-1">
+                            {workflows.map(workflow => (
+                              <button
+                                key={workflow.uuid}
+                                onClick={() => handleExecuteWorkflow(workflow)}
+                                className="w-full text-left p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <div className="font-medium text-sm">
+                                  {workflow.name}
+                                </div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                                  {workflow.text}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
                     </div>
-                  ) : (
-                    <ScrollArea className="h-64">
-                      <div className="space-y-1">
-                        {workflows.map(workflow => (
-                          <button
-                            key={workflow.uuid}
-                            onClick={() => handleExecuteWorkflow(workflow)}
-                            className="w-full text-left p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          >
-                            <div className="font-medium text-sm">
-                              {workflow.name}
-                            </div>
-                            <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                              {workflow.text}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  )}
+                  </PopoverContent>
+                </Popover>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8} className="max-w-xs">
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    {t.devicePanel.tooltips.workflowButton}
+                  </p>
+                  <p className="text-xs opacity-80">
+                    {t.devicePanel.tooltips.workflowButtonDesc}
+                  </p>
                 </div>
-              </PopoverContent>
-            </Popover>
+              </TooltipContent>
+            </Tooltip>
             {/* Abort Button - shown when loading */}
             {loading && (
               <Button

@@ -144,6 +144,18 @@ export const zh = {
     disableDualModel: '禁用双重模型',
     fastMode: '快速模式 - 简单快速',
     deepMode: '深度模式 - 深度思考',
+    tooltips: {
+      workflowButton: '快速执行工作流',
+      workflowButtonDesc: '选择并快速执行预设的工作流任务',
+      enableDualModel: '启用双模型协作',
+      enableDualModelDesc: '大模型决策 + 小模型执行，提升复杂任务处理能力',
+      disableDualModel: '禁用双模型协作',
+      disableDualModelDesc: '切换回单模型模式，仅使用 autoglm-phone',
+      fastMode: '快速思考模式',
+      fastModeDesc: '快速响应，适合简单日常任务（点击、滑动等）',
+      deepMode: '深度思考模式',
+      deepModeDesc: '深度分析，适合复杂任务（多步骤操作、应用跳转等）',
+    },
   },
   deviceCard: {
     unknownDevice: '未知设备',

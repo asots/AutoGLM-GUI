@@ -146,6 +146,21 @@ export const en = {
     disableDualModel: 'Disable dual model',
     fastMode: 'Fast mode - Quick & Simple',
     deepMode: 'Deep mode - Deep thinking',
+    tooltips: {
+      workflowButton: 'Quick Workflow',
+      workflowButtonDesc: 'Select and execute preset workflow tasks',
+      enableDualModel: 'Enable Dual Model',
+      enableDualModelDesc:
+        'Large model for planning + small model for execution',
+      disableDualModel: 'Disable Dual Model',
+      disableDualModelDesc:
+        'Switch back to single model mode using autoglm-phone only',
+      fastMode: 'Fast Thinking Mode',
+      fastModeDesc: 'Quick response for simple tasks (tapping, swiping, etc.)',
+      deepMode: 'Deep Thinking Mode',
+      deepModeDesc:
+        'Deep analysis for complex tasks (multi-step operations, app switching)',
+    },
   },
   deviceCard: {
     unknownDevice: 'Unknown Device',
