@@ -34,6 +34,15 @@ export const en = {
     aborted: 'Chat aborted',
     abortFailed: 'Failed to abort chat',
     abortChat: 'Abort Chat',
+    thinkingMode: 'Thinking Mode',
+    fastMode: 'Fast',
+    fastModeDesc: 'Quick response, suitable for simple tasks',
+    deepMode: 'Deep',
+    deepModeDesc: 'Deep thinking, suitable for complex tasks',
+    advancedSettings: 'Decision Model Settings (Advanced)',
+    decisionBaseUrl: 'Decision Model Base URL',
+    decisionModelName: 'Decision Model Name',
+    decisionApiKey: 'Decision Model API Key',
   },
   deviceSidebar: {
     devices: 'Devices',
@@ -133,11 +142,32 @@ export const en = {
     swiped: 'Swiped',
     swipeError: 'Swipe error: {error}',
     newMessages: 'New messages. Click to view latest',
+    enableDualModel: 'Enable dual model (GLM-4.7 + autoglm-phone)',
+    disableDualModel: 'Disable dual model',
+    fastMode: 'Fast mode - Quick & Simple',
+    deepMode: 'Deep mode - Deep thinking',
+    tooltips: {
+      workflowButton: 'Quick Workflow',
+      workflowButtonDesc: 'Select and execute preset workflow tasks',
+      enableDualModel: 'Enable Dual Model',
+      enableDualModelDesc:
+        'Large model for planning + small model for execution',
+      disableDualModel: 'Disable Dual Model',
+      disableDualModelDesc:
+        'Switch back to single model mode using autoglm-phone only',
+      fastMode: 'Fast Thinking Mode',
+      fastModeDesc: 'Quick response for simple tasks (tapping, swiping, etc.)',
+      deepMode: 'Deep Thinking Mode',
+      deepModeDesc:
+        'Deep analysis for complex tasks (multi-step operations, app switching)',
+    },
   },
   deviceCard: {
     unknownDevice: 'Unknown Device',
     connectViaWifi: 'Connect via WiFi',
     disconnectWifi: 'Disconnect WiFi',
+    disconnectAll: 'Disconnect All',
+    deleteDevice: 'Delete Device',
     ready: 'Ready',
     agentIdle: 'Idle',
     agentBusy: 'Busy',
@@ -148,6 +178,12 @@ export const en = {
       'Switch to WiFi connection? Ensure your device and computer are on the same network.',
     disconnectWifiTitle: 'Disconnect WiFi',
     disconnectWifiContent: 'Are you sure you want to disconnect WiFi?',
+    disconnectAllTitle: 'Disconnect All',
+    disconnectAllContent:
+      'Are you sure you want to disconnect all connections? This will disconnect both USB and WiFi.',
+    deleteDeviceTitle: 'Delete Device',
+    deleteDeviceContent:
+      'Are you sure you want to delete this device? This will disconnect the device.',
   },
   presetConfigs: {
     bigmodel: {

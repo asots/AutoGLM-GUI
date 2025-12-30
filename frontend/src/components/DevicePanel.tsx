@@ -16,9 +16,14 @@ import {
   History,
   ListChecks,
   Square,
+  Brain,
+  Zap,
+  Target,
 } from 'lucide-react';
 import { throttle } from 'lodash';
 import { ScrcpyPlayer } from './ScrcpyPlayer';
+import { DualModelPanel } from './DualModelPanel';
+import { useDualModelState } from './useDualModelState';
 import type {
   ScreenshotResponse,
   ThinkingChunkEvent,
@@ -26,6 +31,7 @@ import type {
   DoneEvent,
   ErrorEvent,
   Workflow,
+  DualModelStreamEvent,
 } from '../api';
 import {
   abortChat,
@@ -34,6 +40,10 @@ import {
   resetChat,
   sendMessageStream,
   listWorkflows,
+  initDualModel,
+  sendDualModelStream,
+  abortDualModelChat,
+  resetDualModel,
 } from '../api';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -55,6 +65,11 @@ import {
 } from '../utils/history';
 import type { HistoryItem } from '../types/history';
 import { HistoryItemCard } from './HistoryItemCard';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface Message {
   id: string;
@@ -73,6 +88,11 @@ interface GlobalConfig {
   base_url: string;
   model_name: string;
   api_key?: string;
+  thinking_mode?: string;
+  dual_model_enabled?: boolean;
+  decision_base_url?: string;
+  decision_model_name?: string;
+  decision_api_key?: string;
 }
 
 interface DevicePanelProps {
@@ -82,6 +102,8 @@ interface DevicePanelProps {
   config: GlobalConfig | null;
   isVisible: boolean;
   isConfigured: boolean;
+  thinkingMode?: 'fast' | 'deep'; // Per-device thinking mode
+  onThinkingModeChange?: (mode: 'fast' | 'deep') => void; // Callback to update thinking mode
 }
 
 export function DevicePanel({
@@ -90,6 +112,8 @@ export function DevicePanel({
   deviceName,
   config,
   isConfigured,
+  thinkingMode = 'fast',
+  onThinkingModeChange,
 }: DevicePanelProps) {
   const t = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -112,6 +136,13 @@ export function DevicePanel({
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [showWorkflowPopover, setShowWorkflowPopover] = useState(false);
+  const [dualModelEnabled, setDualModelEnabled] = useState(false);
+  const [dualModelInitialized, setDualModelInitialized] = useState(false);
+  const {
+    state: dualModelState,
+    handleEvent: handleDualModelEvent,
+    reset: resetDualModelState,
+  } = useDualModelState();
   const feedbackTimeoutRef = useRef<number | null>(null);
 
   const showFeedback = (
@@ -167,6 +198,7 @@ export function DevicePanel({
   };
 
   const chatStreamRef = useRef<{ close: () => void } | null>(null);
+  const dualModelStreamRef = useRef<{ close: () => void } | null>(null);
   const videoStreamRef = useRef<{ close: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -229,6 +261,50 @@ export function DevicePanel({
       setError(errorMessage);
     }
   }, [deviceId, config]);
+
+  // Initialize dual model
+  const handleInitDualModel = useCallback(async () => {
+    if (!config) return;
+
+    try {
+      await initDualModel({
+        device_id: deviceId,
+        decision_base_url:
+          config.decision_base_url || 'https://api-inference.modelscope.cn/v1',
+        decision_api_key: config.decision_api_key || '',
+        decision_model_name: config.decision_model_name || 'ZhipuAI/GLM-4.7',
+        vision_base_url: config.base_url,
+        vision_api_key: config.api_key,
+        vision_model_name: config.model_name,
+        thinking_mode: thinkingMode,
+      });
+      setDualModelInitialized(true);
+      setError(null);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Dual model initialization failed';
+      setError(errorMessage);
+    }
+  }, [deviceId, config, thinkingMode]);
+
+  // Toggle dual model mode
+  const handleToggleDualModel = useCallback(async () => {
+    if (!dualModelEnabled) {
+      if (!dualModelInitialized) {
+        await handleInitDualModel();
+      }
+      setDualModelEnabled(true);
+    } else {
+      setDualModelEnabled(false);
+    }
+  }, [dualModelEnabled, dualModelInitialized, handleInitDualModel]);
+
+  // Reinitialize dual model when thinking mode changes (while dual model is enabled)
+  useEffect(() => {
+    if (dualModelEnabled && dualModelInitialized) {
+      handleInitDualModel();
+    }
+  }, [thinkingMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-initialize on mount if configured
   useEffect(() => {
@@ -542,9 +618,148 @@ export function DevicePanel({
     setFeedbackType,
   ]);
 
+  // Dual model send function
+  const handleSendDualModel = useCallback(async () => {
+    const inputValue = input.trim();
+    if (!inputValue || loading) return;
+
+    if (!dualModelInitialized) {
+      await handleInitDualModel();
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: inputValue,
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setLoading(true);
+    setError(null);
+    resetDualModelState();
+
+    const agentMessageId = (Date.now() + 1).toString();
+    const agentMessage: Message = {
+      id: agentMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      thinking: [],
+      actions: [],
+      isStreaming: true,
+    };
+
+    setMessages(prev => [...prev, agentMessage]);
+
+    const stream = sendDualModelStream(
+      userMessage.content,
+      deviceId,
+      (event: DualModelStreamEvent) => {
+        handleDualModelEvent(event);
+
+        if (event.type === 'task_complete') {
+          const completeEvent = event as {
+            type: 'task_complete';
+            success: boolean;
+            message: string;
+            steps: number;
+          };
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === agentMessageId
+                ? {
+                    ...msg,
+                    content: completeEvent.message,
+                    success: completeEvent.success,
+                    steps: completeEvent.steps,
+                    isStreaming: false,
+                  }
+                : msg
+            )
+          );
+          setLoading(false);
+          dualModelStreamRef.current = null;
+        } else if (event.type === 'error') {
+          const errorEvent = event as { type: 'error'; message: string };
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === agentMessageId
+                ? {
+                    ...msg,
+                    content: `Error: ${errorEvent.message}`,
+                    success: false,
+                    isStreaming: false,
+                  }
+                : msg
+            )
+          );
+          setLoading(false);
+          setError(errorEvent.message);
+          dualModelStreamRef.current = null;
+        } else if (event.type === 'aborted') {
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === agentMessageId
+                ? {
+                    ...msg,
+                    content: 'Task aborted',
+                    success: false,
+                    isStreaming: false,
+                  }
+                : msg
+            )
+          );
+          setLoading(false);
+          dualModelStreamRef.current = null;
+        }
+      },
+      (error: Error) => {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === agentMessageId
+              ? {
+                  ...msg,
+                  content: `Error: ${error.message}`,
+                  success: false,
+                  isStreaming: false,
+                }
+              : msg
+          )
+        );
+        setLoading(false);
+        setError(error.message);
+        dualModelStreamRef.current = null;
+      }
+    );
+
+    dualModelStreamRef.current = stream;
+  }, [
+    input,
+    loading,
+    dualModelInitialized,
+    deviceId,
+    handleInitDualModel,
+    handleDualModelEvent,
+    resetDualModelState,
+  ]);
+
+  // Unified send function
+  const handleSendMessage = useCallback(async () => {
+    if (dualModelEnabled) {
+      await handleSendDualModel();
+    } else {
+      await handleSend();
+    }
+  }, [dualModelEnabled, handleSendDualModel, handleSend]);
+
   const handleReset = useCallback(async () => {
     if (chatStreamRef.current) {
       chatStreamRef.current.close();
+    }
+    if (dualModelStreamRef.current) {
+      dualModelStreamRef.current.close();
     }
 
     setMessages([]);
@@ -553,24 +768,67 @@ export function DevicePanel({
     setShowNewMessageNotice(false);
     setIsAtBottom(true);
     chatStreamRef.current = null;
+    dualModelStreamRef.current = null;
     prevMessageCountRef.current = 0;
     prevMessageSigRef.current = null;
+    resetDualModelState();
 
-    await resetChat(deviceId);
-  }, [deviceId]);
+    if (dualModelEnabled) {
+      await resetDualModel(deviceId);
+    } else {
+      await resetChat(deviceId);
+    }
+  }, [deviceId, dualModelEnabled, resetDualModelState]);
 
   const handleAbortChat = useCallback(async () => {
-    if (!chatStreamRef.current) return;
+    if (!chatStreamRef.current && !dualModelStreamRef.current) return;
 
     setAborting(true);
 
     try {
-      // Close SSE connection
-      chatStreamRef.current.close();
-      chatStreamRef.current = null;
+      // Close SSE connection first
+      if (chatStreamRef.current) {
+        chatStreamRef.current.close();
+        chatStreamRef.current = null;
+      }
+      if (dualModelStreamRef.current) {
+        dualModelStreamRef.current.close();
+        dualModelStreamRef.current = null;
+      }
 
-      // Notify backend to abort
-      await abortChat(deviceId);
+      // Immediately update UI - set isStreaming to false and update message content
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1];
+        if (
+          lastMessage &&
+          lastMessage.role === 'assistant' &&
+          lastMessage.isStreaming
+        ) {
+          return prev.map((msg, index) =>
+            index === prev.length - 1
+              ? {
+                  ...msg,
+                  content: msg.content || t.chat.aborted,
+                  isStreaming: false,
+                  success: false,
+                  currentThinking: undefined,
+                }
+              : msg
+          );
+        }
+        return prev;
+      });
+
+      // Notify backend to abort (don't wait for response)
+      if (dualModelEnabled) {
+        abortDualModelChat(deviceId).catch(e =>
+          console.error('Backend abort failed:', e)
+        );
+      } else {
+        abortChat(deviceId).catch(e =>
+          console.error('Backend abort failed:', e)
+        );
+      }
 
       // Show feedback
       setFeedbackMessage(t.chat.aborted);
@@ -585,7 +843,7 @@ export function DevicePanel({
       setLoading(false);
       setAborting(false);
     }
-  }, [deviceId, t]);
+  }, [deviceId, dualModelEnabled, t]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -634,6 +892,9 @@ export function DevicePanel({
     return () => {
       if (chatStreamRef.current) {
         chatStreamRef.current.close();
+      }
+      if (dualModelStreamRef.current) {
+        dualModelStreamRef.current.close();
       }
       if (videoStreamRef.current) {
         videoStreamRef.current.close();
@@ -709,7 +970,7 @@ export function DevicePanel({
   ) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
-      handleSend();
+      handleSendMessage();
     }
   };
 
@@ -739,10 +1000,12 @@ export function DevicePanel({
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1d9bf0]/10">
               <Sparkles className="h-5 w-5 text-[#1d9bf0]" />
             </div>
-            <div>
-              <h2 className="font-bold text-slate-900 dark:text-slate-100">
-                {deviceName}
-              </h2>
+            <div className="group">
+              <div className="flex items-center gap-1">
+                <h2 className="font-bold text-slate-900 dark:text-slate-100">
+                  {deviceName}
+                </h2>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 {deviceId}
               </p>
@@ -833,6 +1096,104 @@ export function DevicePanel({
               </Badge>
             )}
 
+            {/* Dual Model Toggle */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={dualModelEnabled ? 'default' : 'ghost'}
+                  size="icon"
+                  onClick={handleToggleDualModel}
+                  className={`h-8 w-8 rounded-full ${
+                    dualModelEnabled
+                      ? 'bg-purple-500 hover:bg-purple-600 text-white'
+                      : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                  }`}
+                >
+                  <Brain className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={8} className="max-w-xs">
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    {dualModelEnabled
+                      ? t.devicePanel.tooltips.disableDualModel
+                      : t.devicePanel.tooltips.enableDualModel}
+                  </p>
+                  <p className="text-xs opacity-80">
+                    {dualModelEnabled
+                      ? t.devicePanel.tooltips.disableDualModelDesc
+                      : t.devicePanel.tooltips.enableDualModelDesc}
+                  </p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Thinking Mode Toggle - visible when dual model is enabled */}
+            {dualModelEnabled && onThinkingModeChange && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={thinkingMode === 'fast' ? 'default' : 'ghost'}
+                      size="icon"
+                      onClick={() => onThinkingModeChange('fast')}
+                      className={`h-8 w-8 rounded-full ${
+                        thinkingMode === 'fast'
+                          ? 'bg-green-500 hover:bg-green-600 text-white'
+                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      <Zap className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={8}
+                    className="max-w-xs"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium">
+                        {t.devicePanel.tooltips.fastMode}
+                      </p>
+                      <p className="text-xs opacity-80">
+                        {t.devicePanel.tooltips.fastModeDesc}
+                      </p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={thinkingMode === 'deep' ? 'default' : 'ghost'}
+                      size="icon"
+                      onClick={() => onThinkingModeChange('deep')}
+                      className={`h-8 w-8 rounded-full ${
+                        thinkingMode === 'deep'
+                          ? 'bg-blue-500 hover:bg-blue-600 text-white'
+                          : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      <Target className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    sideOffset={8}
+                    className="max-w-xs"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium">
+                        {t.devicePanel.tooltips.deepMode}
+                      </p>
+                      <p className="text-xs opacity-80">
+                        {t.devicePanel.tooltips.deepModeDesc}
+                      </p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            )}
+
             <Button
               variant="ghost"
               size="icon"
@@ -844,6 +1205,21 @@ export function DevicePanel({
             </Button>
           </div>
         </div>
+
+        {/* Dual Model Panel */}
+        {dualModelEnabled && (
+          <div className="border-b border-slate-200 dark:border-slate-800 p-4">
+            <DualModelPanel
+              state={dualModelState}
+              isStreaming={loading}
+              className=""
+              decisionModelName={
+                config?.decision_model_name || 'ZhipuAI/GLM-4.7'
+              }
+              visionModelName={config?.model_name || 'autoglm-phone'}
+            />
+          </div>
+        )}
 
         {/* Error message */}
         {error && (
@@ -1019,58 +1395,75 @@ export function DevicePanel({
               rows={1}
             />
             {/* Workflow Quick Run Button */}
-            <Popover
-              open={showWorkflowPopover}
-              onOpenChange={setShowWorkflowPopover}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 flex-shrink-0"
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Popover
+                  open={showWorkflowPopover}
+                  onOpenChange={setShowWorkflowPopover}
                 >
-                  <ListChecks className="w-4 h-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-72 p-3">
-                <div className="space-y-2">
-                  <h4 className="font-medium text-sm">
-                    {t.workflows.selectWorkflow}
-                  </h4>
-                  {workflows.length === 0 ? (
-                    <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
-                      <p>{t.workflows.empty}</p>
-                      <p>
-                        前往{' '}
-                        <a href="/workflows" className="text-primary underline">
-                          工作流
-                        </a>{' '}
-                        页面创建。
-                      </p>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 flex-shrink-0"
+                    >
+                      <ListChecks className="w-4 h-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-72 p-3">
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-sm">
+                        {t.workflows.selectWorkflow}
+                      </h4>
+                      {workflows.length === 0 ? (
+                        <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
+                          <p>{t.workflows.empty}</p>
+                          <p>
+                            前往{' '}
+                            <a
+                              href="/workflows"
+                              className="text-primary underline"
+                            >
+                              工作流
+                            </a>{' '}
+                            页面创建。
+                          </p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-64">
+                          <div className="space-y-1">
+                            {workflows.map(workflow => (
+                              <button
+                                key={workflow.uuid}
+                                onClick={() => handleExecuteWorkflow(workflow)}
+                                className="w-full text-left p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                              >
+                                <div className="font-medium text-sm">
+                                  {workflow.name}
+                                </div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                                  {workflow.text}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
                     </div>
-                  ) : (
-                    <ScrollArea className="h-64">
-                      <div className="space-y-1">
-                        {workflows.map(workflow => (
-                          <button
-                            key={workflow.uuid}
-                            onClick={() => handleExecuteWorkflow(workflow)}
-                            className="w-full text-left p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          >
-                            <div className="font-medium text-sm">
-                              {workflow.name}
-                            </div>
-                            <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                              {workflow.text}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  )}
+                  </PopoverContent>
+                </Popover>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8} className="max-w-xs">
+                <div className="space-y-1">
+                  <p className="font-medium">
+                    {t.devicePanel.tooltips.workflowButton}
+                  </p>
+                  <p className="text-xs opacity-80">
+                    {t.devicePanel.tooltips.workflowButtonDesc}
+                  </p>
                 </div>
-              </PopoverContent>
-            </Popover>
+              </TooltipContent>
+            </Tooltip>
             {/* Abort Button - shown when loading */}
             {loading && (
               <Button
@@ -1091,7 +1484,7 @@ export function DevicePanel({
             {/* Send Button */}
             {!loading && (
               <Button
-                onClick={handleSend}
+                onClick={handleSendMessage}
                 disabled={!input.trim()}
                 size="icon"
                 variant="twitter"

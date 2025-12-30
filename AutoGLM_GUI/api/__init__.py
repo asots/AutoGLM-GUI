@@ -14,7 +14,17 @@ from fastapi.staticfiles import StaticFiles
 from AutoGLM_GUI.adb_plus.qr_pair import qr_pairing_manager
 from AutoGLM_GUI.version import APP_VERSION
 
-from . import agents, control, devices, mcp, media, metrics, version, workflows
+from . import (
+    agents,
+    control,
+    devices,
+    dual_model,
+    mcp,
+    media,
+    metrics,
+    version,
+    workflows,
+)
 
 
 def _get_static_dir() -> Path | None:
@@ -85,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(version.router)
     app.include_router(workflows.router)
+    app.include_router(dual_model.router)
 
     # Mount MCP server at root (mcp_app already has /mcp path prefix)
     app.mount("/", mcp_app)

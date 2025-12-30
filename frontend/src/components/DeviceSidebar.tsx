@@ -530,6 +530,7 @@ export function DeviceSidebar({
               <DeviceCard
                 key={device.id}
                 id={device.id}
+                serial={device.serial}
                 model={device.model}
                 status={device.status}
                 connectionType={device.connection_type}

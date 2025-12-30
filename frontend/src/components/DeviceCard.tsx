@@ -16,6 +16,7 @@ import type { AgentStatus } from '../api';
 
 interface DeviceCardProps {
   id: string;
+  serial: string;
   model: string;
   status: string;
   connectionType?: string;
@@ -28,6 +29,7 @@ interface DeviceCardProps {
 
 export function DeviceCard({
   id,
+  serial: _serial,
   model,
   status,
   connectionType,
@@ -44,6 +46,8 @@ export function DeviceCard({
   const [loading, setLoading] = useState(false);
   const [showWifiConfirm, setShowWifiConfirm] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+
+  const displayName = model || t.deviceCard.unknownDevice;
 
   const handleWifiClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -121,7 +125,7 @@ export function DeviceCard({
           <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
             <div className="flex items-center gap-2">
               <Smartphone
-                className={`w-4 h-4 ${
+                className={`w-4 h-4 flex-shrink-0 ${
                   isActive
                     ? 'text-[#1d9bf0]'
                     : 'text-slate-400 dark:text-slate-500'
@@ -134,7 +138,7 @@ export function DeviceCard({
                     : 'text-slate-700 dark:text-slate-300'
                 }`}
               >
-                {model || t.deviceCard.unknownDevice}
+                {displayName}
               </span>
             </div>
             <span
@@ -144,101 +148,110 @@ export function DeviceCard({
                   : 'text-slate-400 dark:text-slate-500'
               }`}
             >
-              {id}
+              {model || id}
             </span>
+
+            {/* Agent status */}
+            {agent && (
+              <div className="flex items-center gap-1.5 mt-1">
+                {agent.state === 'busy' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-[#1d9bf0]/10 text-[#1d9bf0] hover:bg-[#1d9bf0]/20"
+                  >
+                    <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" />
+                    {t.deviceCard.agentBusy}
+                  </Badge>
+                )}
+                {agent.state === 'idle' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                  >
+                    <CheckCircle2 className="w-2.5 h-2.5 mr-1" />
+                    {t.deviceCard.agentIdle}
+                  </Badge>
+                )}
+                {agent.state === 'error' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                  >
+                    <XCircle className="w-2.5 h-2.5 mr-1" />
+                    {t.deviceCard.agentError}
+                  </Badge>
+                )}
+                {agent.state === 'initializing' && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs px-1.5 py-0 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                  >
+                    <Clock className="w-2.5 h-2.5 mr-1" />
+                    {t.deviceCard.agentInitializing}
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Connection type badge */}
+          {isUsb && (
+            <Badge
+              variant="outline"
+              className="flex-shrink-0 text-xs border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-400"
+            >
+              USB
+            </Badge>
+          )}
+          {isRemote && (
+            <Badge
+              variant="outline"
+              className="flex-shrink-0 text-xs border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-400"
+            >
+              <WifiOff className="w-2.5 h-2.5 mr-1" />
+              Remote
+            </Badge>
+          )}
+
           {/* Action buttons */}
-          <div className="flex items-center gap-1">
-            {isUsb && onConnectWifi && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {onConnectWifi && isUsb && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleWifiClick}
                 disabled={loading}
-                className={`h-8 w-8 rounded-full ${
-                  isActive
-                    ? 'bg-[#1d9bf0]/10 text-[#1d9bf0] hover:bg-[#1d9bf0]/20'
-                    : 'text-slate-400 dark:text-slate-500 hover:text-[#1d9bf0] dark:hover:text-[#1d9bf0] hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
+                className="h-7 w-7 text-slate-400 hover:text-[#1d9bf0]"
                 title={t.deviceCard.connectViaWifi}
               >
                 {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Wifi className="w-4 h-4" />
+                  <Wifi className="w-3.5 h-3.5" />
                 )}
               </Button>
             )}
-
-            {isRemote && onDisconnectWifi && (
+            {onDisconnectWifi && isRemote && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleDisconnectClick}
                 disabled={loading}
-                className={`h-8 w-8 rounded-full ${
-                  isActive
-                    ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20'
-                    : 'text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
+                className="h-7 w-7 text-slate-400 hover:text-orange-500"
                 title={t.deviceCard.disconnectWifi}
               >
                 {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <WifiOff className="w-4 h-4" />
+                  <WifiOff className="w-3.5 h-3.5" />
                 )}
               </Button>
             )}
-
-            {/* Agent status badge */}
-            {agent ? (
-              <Badge
-                variant={
-                  agent.state === 'idle'
-                    ? 'success'
-                    : agent.state === 'busy'
-                      ? 'warning'
-                      : agent.state === 'error'
-                        ? 'destructive'
-                        : 'secondary'
-                }
-                className={`text-xs ${
-                  isActive
-                    ? agent.state === 'idle'
-                      ? 'bg-green-500/10 text-green-600 dark:text-green-400'
-                      : agent.state === 'busy'
-                        ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
-                        : agent.state === 'error'
-                          ? 'bg-red-500/10 text-red-600 dark:text-red-400'
-                          : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'
-                    : ''
-                }`}
-              >
-                {agent.state === 'idle' && (
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                )}
-                {agent.state === 'busy' && (
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                )}
-                {agent.state === 'error' && (
-                  <XCircle className="w-3 h-3 mr-1" />
-                )}
-                {agent.state === 'initializing' && (
-                  <Clock className="w-3 h-3 mr-1" />
-                )}
-                {agent.state === 'idle' && t.deviceCard.agentIdle}
-                {agent.state === 'busy' && t.deviceCard.agentBusy}
-                {agent.state === 'error' && t.deviceCard.agentError}
-                {agent.state === 'initializing' &&
-                  t.deviceCard.agentInitializing}
-              </Badge>
-            ) : null}
           </div>
         </div>
       </div>
 
+      {/* WiFi Connection Confirmation Dialog */}
       <ConfirmDialog
         isOpen={showWifiConfirm}
         title={t.deviceCard.connectWifiTitle}
@@ -247,6 +260,7 @@ export function DeviceCard({
         onCancel={() => setShowWifiConfirm(false)}
       />
 
+      {/* WiFi Disconnect Confirmation Dialog */}
       <ConfirmDialog
         isOpen={showDisconnectConfirm}
         title={t.deviceCard.disconnectWifiTitle}
