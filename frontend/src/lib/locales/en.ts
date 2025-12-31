@@ -216,6 +216,8 @@ export const en = {
     wifiManualConnectError: 'Failed to connect to WiFi device',
     wifiPaired: 'WiFi device paired and connected',
     wifiPairError: 'WiFi pairing failed',
+    decisionModelNotConfigured:
+      'Decision model not configured. Please set up the API Key in settings.',
   },
   history: {
     title: 'Task History',

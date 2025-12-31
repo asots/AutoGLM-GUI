@@ -208,6 +208,8 @@ export const zh = {
     wifiManualConnectError: '连接 WiFi 设备失败',
     wifiPaired: 'WiFi 设备已配对并连接',
     wifiPairError: 'WiFi 配对失败',
+    decisionModelNotConfigured:
+      '未配置决策模型，请在设置中配置决策模型的 API Key',
   },
   history: {
     title: '任务历史',

@@ -778,7 +778,15 @@ function ChatComponent() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => setChatMode('dual')}
+                  onClick={() => {
+                    setChatMode('dual');
+                    if (!config?.decision_api_key) {
+                      showToast(
+                        t.toasts.decisionModelNotConfigured,
+                        'warning'
+                      );
+                    }
+                  }}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                     chatMode === 'dual'
                       ? 'bg-purple-600 text-white shadow-sm'
@@ -804,7 +812,15 @@ function ChatComponent() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => setChatMode('chatkit')}
+                  onClick={() => {
+                    setChatMode('chatkit');
+                    if (!config?.decision_api_key) {
+                      showToast(
+                        t.toasts.decisionModelNotConfigured,
+                        'warning'
+                      );
+                    }
+                  }}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                     chatMode === 'chatkit'
                       ? 'bg-indigo-600 text-white shadow-sm'
