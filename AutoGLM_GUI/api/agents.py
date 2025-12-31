@@ -148,7 +148,27 @@ def init_agent(request: InitRequest) -> dict:
 
     # Initialize agent (includes ADB Keyboard setup)
     try:
-        _initialize_agent_with_config(device_id, model_config, agent_config)
+        # Setup ADB Keyboard (common for all agents)
+        _setup_adb_keyboard(device_id)
+
+        # Use agent factory to create agent
+        from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
+
+        manager = PhoneAgentManager.get_instance()
+
+        # Initialize agent using factory pattern
+        manager.initialize_agent_with_factory(
+            device_id=device_id,
+            agent_type=request.agent_type,
+            model_config=model_config,
+            agent_config=agent_config,
+            agent_specific_config=request.agent_config_params or {},
+            takeover_callback=non_blocking_takeover,
+        )
+
+        logger.info(
+            f"Agent of type '{request.agent_type}' initialized for device {device_id}"
+        )
     except Exception as e:
         logger.error(f"Failed to initialize agent: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -157,6 +177,7 @@ def init_agent(request: InitRequest) -> dict:
         "success": True,
         "device_id": device_id,
         "message": f"Agent initialized for device {device_id}",
+        "agent_type": request.agent_type,
     }
 
 
@@ -460,6 +481,8 @@ def get_config_endpoint() -> ConfigResponse:
         decision_api_key=effective_config.decision_api_key
         if effective_config.decision_api_key
         else "",
+        agent_type=effective_config.agent_type,
+        agent_config_params=effective_config.agent_config_params,
         conflicts=[
             {
                 "field": c.field,
@@ -496,6 +519,8 @@ def save_config_endpoint(request: ConfigSaveRequest) -> dict:
             decision_base_url=request.decision_base_url,
             decision_model_name=request.decision_model_name,
             decision_api_key=request.decision_api_key,
+            agent_type=request.agent_type,
+            agent_config_params=request.agent_config_params,
             merge_mode=True,
         )
 

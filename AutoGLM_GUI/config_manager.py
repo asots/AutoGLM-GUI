@@ -58,6 +58,10 @@ class ConfigModel(BaseModel):
     decision_model_name: str = ""
     decision_api_key: str = ""
 
+    # Agent 类型配置
+    agent_type: str = "glm"  # Agent type (e.g., "glm", "mai")
+    agent_config_params: dict | None = None  # Agent-specific configuration
+
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, v: str) -> str:
@@ -98,6 +102,9 @@ class ConfigLayer:
     decision_base_url: Optional[str] = None
     decision_model_name: Optional[str] = None
     decision_api_key: Optional[str] = None
+    # Agent 类型配置
+    agent_type: Optional[str] = None
+    agent_config_params: Optional[dict] = None
 
     source: ConfigSource = ConfigSource.DEFAULT
 
@@ -129,6 +136,8 @@ class ConfigLayer:
                 "decision_base_url": self.decision_base_url,
                 "decision_model_name": self.decision_model_name,
                 "decision_api_key": self.decision_api_key,
+                "agent_type": self.agent_type,
+                "agent_config_params": self.agent_config_params,
             }.items()
             if v is not None
         }
@@ -188,6 +197,8 @@ class UnifiedConfigManager:
             base_url="",
             model_name="autoglm-phone-9b",
             api_key="EMPTY",
+            agent_type="glm",
+            agent_config_params=None,
             source=ConfigSource.DEFAULT,
         )
 
@@ -300,6 +311,10 @@ class UnifiedConfigManager:
                 decision_base_url=config_data.get("decision_base_url"),
                 decision_model_name=config_data.get("decision_model_name"),
                 decision_api_key=config_data.get("decision_api_key"),
+                agent_type=config_data.get(
+                    "agent_type", "glm"
+                ),  # 默认 'glm'，兼容旧配置
+                agent_config_params=config_data.get("agent_config_params"),
                 source=ConfigSource.FILE,
             )
             self._effective_config = None  # 清除缓存
@@ -331,6 +346,8 @@ class UnifiedConfigManager:
         decision_base_url: Optional[str] = None,
         decision_model_name: Optional[str] = None,
         decision_api_key: Optional[str] = None,
+        agent_type: Optional[str] = None,
+        agent_config_params: Optional[dict] = None,
         merge_mode: bool = True,
     ) -> bool:
         """
@@ -344,6 +361,8 @@ class UnifiedConfigManager:
             decision_base_url: 决策模型 Base URL
             decision_model_name: 决策模型名称
             decision_api_key: 决策模型 API key
+            agent_type: Agent 类型（可选，如 "glm", "mai"）
+            agent_config_params: Agent 特定配置参数（可选）
             merge_mode: 是否合并现有配置（True: 保留未提供的字段）
 
         Returns:
@@ -369,6 +388,10 @@ class UnifiedConfigManager:
                 new_config["decision_model_name"] = decision_model_name
             if decision_api_key:
                 new_config["decision_api_key"] = decision_api_key
+            if agent_type is not None:
+                new_config["agent_type"] = agent_type
+            if agent_config_params is not None:
+                new_config["agent_config_params"] = agent_config_params
 
             # 合并模式：保留现有文件中未提供的字段
             if merge_mode and self._config_path.exists():
@@ -383,6 +406,8 @@ class UnifiedConfigManager:
                         "decision_base_url",
                         "decision_model_name",
                         "decision_api_key",
+                        "agent_type",
+                        "agent_config_params",
                     ]
                     for key in preserve_keys:
                         if key not in new_config and key in existing:
@@ -471,6 +496,8 @@ class UnifiedConfigManager:
             "decision_base_url",
             "decision_model_name",
             "decision_api_key",
+            "agent_type",
+            "agent_config_params",
         ]
 
         for key in config_keys:
@@ -637,6 +664,8 @@ class UnifiedConfigManager:
             "decision_base_url": config.decision_base_url,
             "decision_model_name": config.decision_model_name,
             "decision_api_key": config.decision_api_key,
+            "agent_type": config.agent_type,
+            "agent_config_params": config.agent_config_params,
         }
 
 

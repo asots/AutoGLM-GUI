@@ -94,6 +94,8 @@ interface GlobalConfig {
   decision_base_url?: string;
   decision_model_name?: string;
   decision_api_key?: string;
+  agent_type?: string;
+  agent_config_params?: Record<string, unknown>;
 }
 
 interface DevicePanelProps {
@@ -254,6 +256,8 @@ export function DevicePanel({
         agent_config: {
           device_id: deviceId,
         },
+        agent_type: config.agent_type,
+        agent_config_params: config.agent_config_params,
       });
       setInitialized(true);
       setError(null);
@@ -288,17 +292,41 @@ export function DevicePanel({
 
   // Auto-initialize dual model when enabled from parent
   useEffect(() => {
-    if (dualModelEnabled && !dualModelInitialized) {
+    // Only auto-initialize if:
+    // 1. Dual model is enabled
+    // 2. Single-model Agent is already initialized (required for dual model)
+    // 3. Decision model configuration is provided
+    // 4. Vision model base_url is configured
+    if (
+      dualModelEnabled &&
+      !dualModelInitialized &&
+      initialized &&
+      config?.decision_base_url &&
+      config?.base_url
+    ) {
       handleInitDualModel();
     }
-  }, [dualModelEnabled, dualModelInitialized, handleInitDualModel]);
+  }, [
+    dualModelEnabled,
+    dualModelInitialized,
+    initialized,
+    config,
+    handleInitDualModel,
+  ]);
 
   // Reinitialize dual model when thinking mode changes (while dual model is enabled)
   useEffect(() => {
-    if (dualModelEnabled && dualModelInitialized) {
+    // Only reinitialize if dual model is enabled and already initialized,
+    // and required configuration is present
+    if (
+      dualModelEnabled &&
+      dualModelInitialized &&
+      config?.decision_base_url &&
+      config?.base_url
+    ) {
       handleInitDualModel();
     }
-  }, [thinkingMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [thinkingMode, dualModelEnabled, dualModelInitialized, config]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-initialize on mount if configured
   useEffect(() => {
