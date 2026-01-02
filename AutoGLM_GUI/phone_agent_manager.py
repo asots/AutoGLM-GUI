@@ -268,8 +268,15 @@ class PhoneAgentManager:
                     f"Device {device_id} is currently processing a request"
                 )
 
-            # Set initializing state
-            self._states[device_id] = AgentState.INITIALIZING
+            # Create metadata first with INITIALIZING state
+            self._metadata[device_id] = AgentMetadata(
+                device_id=device_id,
+                state=AgentState.INITIALIZING,
+                model_config=model_config,
+                agent_config=agent_config,
+                created_at=time.time(),
+                last_used=time.time(),
+            )
 
             try:
                 # Create agent using factory
@@ -286,16 +293,8 @@ class PhoneAgentManager:
                 agents[device_id] = agent
                 agent_configs[device_id] = (model_config, agent_config)
 
-                # Update metadata (store agent_type for reference)
-                self._metadata[device_id] = AgentMetadata(
-                    device_id=device_id,
-                    state=AgentState.IDLE,
-                    model_config=model_config,
-                    agent_config=agent_config,
-                    created_at=time.time(),
-                    last_used=time.time(),
-                )
-                self._states[device_id] = AgentState.IDLE
+                # Update state to IDLE on success
+                self._metadata[device_id].state = AgentState.IDLE
 
                 logger.info(
                     f"Agent of type '{agent_type}' initialized for device {device_id}"
@@ -306,8 +305,8 @@ class PhoneAgentManager:
                 # Rollback on error
                 agents.pop(device_id, None)
                 agent_configs.pop(device_id, None)
-                self._metadata.pop(device_id, None)
-                self._states[device_id] = AgentState.ERROR
+                self._metadata[device_id].state = AgentState.ERROR
+                self._metadata[device_id].error_message = str(e)
 
                 logger.error(f"Failed to initialize agent for {device_id}: {e}")
                 raise AgentInitializationError(
