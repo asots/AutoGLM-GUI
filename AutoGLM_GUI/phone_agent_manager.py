@@ -494,7 +494,6 @@ class PhoneAgentManager:
         Raises:
             AgentInitializationError: 如果配置不完整或初始化失败
         """
-        from AutoGLM_GUI.config import config
         from AutoGLM_GUI.config_manager import config_manager
         from phone_agent.agent import AgentConfig
         from phone_agent.model import ModelConfig
@@ -504,7 +503,6 @@ class PhoneAgentManager:
         # 热重载配置
         config_manager.load_file_config()
         config_manager.sync_to_env()
-        config.refresh_from_env()
 
         effective_config = config_manager.get_effective_config()
 

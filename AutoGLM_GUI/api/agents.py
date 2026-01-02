@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
-from AutoGLM_GUI.config import config
 from AutoGLM_GUI.logger import logger
 from AutoGLM_GUI.phone_agent_patches import apply_patches
 from AutoGLM_GUI.schemas import (
@@ -116,14 +115,16 @@ def init_agent(request: InitRequest) -> dict:
     # 热重载配置文件（支持运行时手动修改）
     config_manager.load_file_config()
     config_manager.sync_to_env()
-    config.refresh_from_env()
 
-    base_url = req_model_config.base_url or config.base_url
-    api_key = req_model_config.api_key or config.api_key
-    model_name = req_model_config.model_name or config.model_name
+    # 获取有效配置（已合并 CLI > ENV > FILE > DEFAULT）
+    effective_config = config_manager.get_effective_config()
+
+    # 优先级：请求参数 > 有效配置
+    base_url = req_model_config.base_url or effective_config.base_url
+    api_key = req_model_config.api_key or effective_config.api_key
+    model_name = req_model_config.model_name or effective_config.model_name
 
     # 获取配置的默认最大步数
-    effective_config = config_manager.get_effective_config()
     max_steps = effective_config.default_max_steps
 
     if not base_url:
@@ -536,7 +537,6 @@ def save_config_endpoint(request: ConfigSaveRequest) -> dict:
 
         # 同步到环境变量
         config_manager.sync_to_env()
-        config.refresh_from_env()
 
         # 检测冲突并返回警告
         conflicts = config_manager.detect_conflicts()

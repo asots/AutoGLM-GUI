@@ -140,7 +140,6 @@ def main() -> None:
     import uvicorn
 
     from AutoGLM_GUI import server
-    from AutoGLM_GUI.config import config
     from AutoGLM_GUI.config_manager import config_manager
     from AutoGLM_GUI.logger import configure_logger
 
@@ -169,9 +168,6 @@ def main() -> None:
 
     # 5. 同步到环境变量（reload 模式需要）
     config_manager.sync_to_env()
-
-    # 6. 刷新旧的 config 对象（保持现有代码兼容）
-    config.refresh_from_env()
 
     # 获取配置来源
     config_source = config_manager.get_config_source()

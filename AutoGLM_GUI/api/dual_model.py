@@ -67,7 +67,6 @@ class DualModelStatusResponse(BaseModel):
 @router.post("/init")
 def init_dual_model(request: DualModelInitRequest) -> dict:
     """初始化双模型Agent"""
-    from AutoGLM_GUI.config import config
     from AutoGLM_GUI.config_manager import config_manager
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
@@ -87,17 +86,19 @@ def init_dual_model(request: DualModelInitRequest) -> dict:
             status_code=400, detail="设备尚未初始化单模型Agent，请先调用 /api/init"
         )
 
-    # 获取视觉模型配置
-    vision_base_url = request.vision_base_url or config.base_url
-    vision_api_key = request.vision_api_key or config.api_key
-    vision_model_name = request.vision_model_name or config.model_name
+    # 获取有效配置
+    effective_config = config_manager.get_effective_config()
+
+    # 获取配置的默认最大步数
+    max_steps = effective_config.default_max_steps
+
+    # 获取视觉模型配置（优先级：请求参数 > 有效配置）
+    vision_base_url = request.vision_base_url or effective_config.base_url
+    vision_api_key = request.vision_api_key or effective_config.api_key
+    vision_model_name = request.vision_model_name or effective_config.model_name
 
     if not vision_base_url:
         raise HTTPException(status_code=400, detail="视觉模型base_url未配置")
-
-    # 获取配置的默认最大步数
-    effective_config = config_manager.get_effective_config()
-    max_steps = effective_config.default_max_steps
 
     # 创建配置
     decision_config = DecisionModelConfig(
