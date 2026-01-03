@@ -1,6 +1,7 @@
 """FastAPI application factory and route registration."""
 
 import asyncio
+import os
 import sys
 from contextlib import asynccontextmanager
 from importlib.resources import files
@@ -19,6 +20,7 @@ from . import (
     control,
     devices,
     dual_model,
+    health,
     layered_agent,
     mcp,
     media,
@@ -26,6 +28,13 @@ from . import (
     version,
     workflows,
 )
+
+
+def _get_cors_origins() -> list[str]:
+    cors_origins_str = os.getenv("AUTOGLM_CORS_ORIGINS", "http://localhost:3000")
+    if cors_origins_str == "*":
+        return ["*"]
+    return [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
 
 
 def _get_static_dir() -> Path | None:
@@ -82,13 +91,14 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
+        allow_origins=_get_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     app.include_router(agents.router)
+    app.include_router(health.router)
     app.include_router(layered_agent.router)
     app.include_router(devices.router)
     app.include_router(control.router)
