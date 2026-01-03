@@ -106,14 +106,29 @@ def create_app() -> FastAPI:
     if static_dir is not None and static_dir.exists():
         assets_dir = static_dir / "assets"
         if assets_dir.exists():
+            # Vite builds assets with content hashes, so we can cache them long-term
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
         # Define SPA serving function
         async def serve_spa(full_path: str) -> FileResponse:
             file_path = static_dir / full_path
             if file_path.is_file():
-                return FileResponse(file_path)
-            return FileResponse(static_dir / "index.html")
+                return FileResponse(
+                    file_path,
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                )
+            return FileResponse(
+                static_dir / "index.html",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
 
         # Add catch-all route for SPA (handles all non-API routes)
         app.add_api_route(
