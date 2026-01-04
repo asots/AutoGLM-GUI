@@ -155,7 +155,9 @@ def _sync_list_devices() -> str:
         _build_device_response_with_agent(d, agent_manager) for d in managed_devices
     ]
 
-    return json.dumps(devices_with_agents, ensure_ascii=False, indent=2)
+    # Convert DeviceResponse Pydantic models to dicts before JSON serialization
+    devices_dict = [device.model_dump() for device in devices_with_agents]
+    return json.dumps(devices_dict, ensure_ascii=False, indent=2)
 
 
 @function_tool

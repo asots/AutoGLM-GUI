@@ -42,7 +42,7 @@ def _build_device_response_with_agent(
         metadata = agent_manager.get_metadata(agent_device_id)
         if metadata:
             response["agent"] = {
-                "state": metadata.state.value,
+                "state": metadata.state,  # AgentState is str, Enum, already a string
                 "created_at": metadata.created_at,
                 "last_used": metadata.last_used,
                 "error_message": metadata.error_message,
