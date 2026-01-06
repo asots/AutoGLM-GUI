@@ -1,15 +1,17 @@
-"""GLM Agent implementation with full control over the agent lifecycle."""
-
 import json
 import traceback
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
-from AutoGLM_GUI.actions import ActionHandler, ActionResult, parse_action
+from openai import OpenAI
+
+from AutoGLM_GUI.actions import ActionHandler, ActionResult
 from AutoGLM_GUI.config import AgentConfig, ModelConfig, StepResult
 from AutoGLM_GUI.device_protocol import DeviceProtocol
 from AutoGLM_GUI.logger import logger
-from AutoGLM_GUI.model import MessageBuilder, ModelClient, VisionModelConfig
-from phone_agent.config import get_messages, get_system_prompt
+from AutoGLM_GUI.prompt_config import get_messages, get_system_prompt
+
+from .message_builder import MessageBuilder
+from .parser import GLMParser
 
 
 class GLMAgent:
@@ -17,6 +19,7 @@ class GLMAgent:
         self,
         model_config: ModelConfig,
         agent_config: AgentConfig,
+        device: DeviceProtocol,
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
         thinking_callback: Callable[[str], None] | None = None,
@@ -24,20 +27,14 @@ class GLMAgent:
         self.model_config = model_config
         self.agent_config = agent_config
 
-        glm_model_config = VisionModelConfig(
+        self.openai_client = OpenAI(
             base_url=model_config.base_url,
-            model_name=model_config.model_name,
             api_key=model_config.api_key,
-            max_tokens=model_config.max_tokens,
-            temperature=model_config.temperature,
-            top_p=model_config.top_p,
-            frequency_penalty=model_config.frequency_penalty,
-            extra_body=model_config.extra_body,
+            timeout=120,
         )
+        self.parser = GLMParser()
 
-        self.model_client = ModelClient(glm_model_config)
-
-        self.device = self._resolve_device(agent_config.device_id)
+        self.device = device
         self.action_handler = ActionHandler(
             device=self.device,
             confirmation_callback=confirmation_callback,
@@ -48,28 +45,6 @@ class GLMAgent:
         self._step_count = 0
         self._is_running = False
         self._thinking_callback = thinking_callback
-
-    @staticmethod
-    def _resolve_device(device_id: str | None) -> DeviceProtocol:
-        from AutoGLM_GUI.device_manager import DeviceManager
-        from AutoGLM_GUI.devices.adb_device import ADBDevice
-
-        if not device_id:
-            raise ValueError("device_id is required for GLM Agent")
-
-        device_manager = DeviceManager.get_instance()
-        managed = device_manager.get_device_by_device_id(device_id)
-
-        if not managed:
-            raise ValueError(f"Device {device_id} not found")
-
-        if managed.connection_type.value == "remote":
-            remote_device = device_manager.get_remote_device_instance(managed.serial)
-            if not remote_device:
-                raise ValueError(f"Remote device instance not found: {managed.serial}")
-            return remote_device  # type: ignore[return-value]
-        else:
-            return ADBDevice(managed.primary_device_id)
 
     def run(self, task: str) -> str:
         self._context = []
@@ -109,6 +84,90 @@ class GLMAgent:
         self._is_running = False
         logger.info("Agent aborted by user")
 
+    def _stream_request(
+        self,
+        messages: list[dict[str, Any]],
+        on_thinking_chunk: Callable[[str], None] | None = None,
+    ) -> tuple[str, str, str]:
+        stream = self.openai_client.chat.completions.create(
+            messages=cast(Any, messages),
+            model=self.model_config.model_name,
+            max_tokens=self.model_config.max_tokens,
+            temperature=self.model_config.temperature,
+            top_p=self.model_config.top_p,
+            frequency_penalty=self.model_config.frequency_penalty,
+            extra_body=self.model_config.extra_body,
+            stream=True,
+        )
+
+        raw_content = ""
+        buffer = ""
+        action_markers = ["finish(message=", "do(action="]
+        in_action_phase = False
+
+        for chunk in stream:
+            if len(chunk.choices) == 0:
+                continue
+            if chunk.choices[0].delta.content is not None:
+                content = chunk.choices[0].delta.content
+                raw_content += content
+
+                if in_action_phase:
+                    continue
+
+                buffer += content
+
+                marker_found = False
+                for marker in action_markers:
+                    if marker in buffer:
+                        thinking_part = buffer.split(marker, 1)[0]
+                        if on_thinking_chunk:
+                            on_thinking_chunk(thinking_part)
+                        in_action_phase = True
+                        marker_found = True
+                        break
+
+                if marker_found:
+                    continue
+
+                is_potential_marker = False
+                for marker in action_markers:
+                    for i in range(1, len(marker)):
+                        if buffer.endswith(marker[:i]):
+                            is_potential_marker = True
+                            break
+                    if is_potential_marker:
+                        break
+
+                if not is_potential_marker:
+                    if on_thinking_chunk:
+                        on_thinking_chunk(buffer)
+                    buffer = ""
+
+        thinking, action = self._parse_raw_response(raw_content)
+        return thinking, action, raw_content
+
+    def _parse_raw_response(self, content: str) -> tuple[str, str]:
+        if "finish(message=" in content:
+            parts = content.split("finish(message=", 1)
+            thinking = parts[0].strip()
+            action = "finish(message=" + parts[1]
+            return thinking, action
+
+        if "do(action=" in content:
+            parts = content.split("do(action=", 1)
+            thinking = parts[0].strip()
+            action = "do(action=" + parts[1]
+            return thinking, action
+
+        if "<answer>" in content:
+            parts = content.split("<answer>", 1)
+            thinking = parts[0].replace("<think>", "").replace("</think>", "").strip()
+            action = parts[1].replace("</answer>", "").strip()
+            return thinking, action
+
+        return "", content
+
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
@@ -118,9 +177,10 @@ class GLMAgent:
         current_app = self.device.get_current_app()
 
         if is_first:
-            system_prompt = self.agent_config.system_prompt or get_system_prompt(
-                self.agent_config.lang
-            )
+            system_prompt = self.agent_config.system_prompt
+            if system_prompt is None:
+                system_prompt = get_system_prompt(self.agent_config.lang)
+
             self._context.append(MessageBuilder.create_system_message(system_prompt))
 
             screen_info = MessageBuilder.build_screen_info(current_app)
@@ -133,7 +193,7 @@ class GLMAgent:
             )
         else:
             screen_info = MessageBuilder.build_screen_info(current_app)
-            text_content = screen_info
+            text_content = f"** Screen Info **\n\n{screen_info}"
 
             self._context.append(
                 MessageBuilder.create_user_message(
@@ -156,7 +216,7 @@ class GLMAgent:
 
                 callback = print_chunk
 
-            response = self.model_client.request(
+            thinking, action_str, raw_content = self._stream_request(
                 self._context, on_thinking_chunk=callback
             )
         except Exception as e:
@@ -171,11 +231,11 @@ class GLMAgent:
             )
 
         try:
-            action = parse_action(response.action)
+            action = self.parser.parse(action_str)
         except ValueError as e:
             if self.agent_config.verbose:
                 logger.warning(f"Failed to parse action: {e}, treating as finish")
-            action = {"_metadata": "finish", "message": response.action}
+            action = {"_metadata": "finish", "message": action_str}
 
         if self.agent_config.verbose:
             print()
@@ -197,7 +257,7 @@ class GLMAgent:
 
         self._context.append(
             MessageBuilder.create_assistant_message(
-                f"<think>{response.thinking}</think><answer>{response.action}</answer>"
+                f"<think>{thinking}</think><answer>{action_str}</answer>"
             )
         )
 
@@ -215,7 +275,7 @@ class GLMAgent:
             success=result.success,
             finished=finished,
             action=action,
-            thinking=response.thinking,
+            thinking=thinking,
             message=result.message or action.get("message"),
         )
 
