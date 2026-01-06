@@ -20,7 +20,6 @@ from . import (
     agents,
     control,
     devices,
-    dual_model,
     health,
     layered_agent,
     mcp,
@@ -149,7 +148,6 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(version.router)
     app.include_router(workflows.router)
-    app.include_router(dual_model.router)
 
     # Mount static files BEFORE MCP to ensure they have priority
     # This is critical: FastAPI processes mounts in order, so static files
@@ -165,8 +163,23 @@ def create_app() -> FastAPI:
         async def serve_spa(full_path: str) -> FileResponse:
             file_path = static_dir / full_path
             if file_path.is_file():
+                # Explicitly set media_type for common file types to avoid MIME detection issues
+                # This is critical for PyInstaller environments where mimetypes module may fail
+                media_type = None
+                suffix = file_path.suffix.lower()
+                if suffix == ".js":
+                    media_type = "application/javascript"
+                elif suffix == ".css":
+                    media_type = "text/css"
+                elif suffix == ".json":
+                    media_type = "application/json"
+                elif suffix in (".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico"):
+                    # Let FileResponse auto-detect image types (usually works)
+                    media_type = None
+
                 return FileResponse(
                     file_path,
+                    media_type=media_type,
                     headers={
                         "Cache-Control": "no-cache, no-store, must-revalidate",
                         "Pragma": "no-cache",
@@ -175,6 +188,7 @@ def create_app() -> FastAPI:
                 )
             return FileResponse(
                 static_dir / "index.html",
+                media_type="text/html",
                 headers={
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Pragma": "no-cache",
